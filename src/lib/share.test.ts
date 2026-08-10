@@ -1,54 +1,94 @@
 import { describe, it, expect } from 'vitest';
 import { buildShareText } from './share';
 
+// Emoji are constructed from code points so this file stays pure ASCII.
+const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
+const WOLF = cp(0x1f43a);
+const KEYS = cp(0x2328, 0xfe0f);
+const TARGET = cp(0x1f3af);
+const TIMER = cp(0x23f1, 0xfe0f);
+const DONE = cp(0x1f7e9);
+const MISS = cp(0x2b1c);
+const FIRE = cp(0x1f525);
+
 describe('buildShareText', () => {
-  it('matches the documented spoiler-free format', () => {
+  it('matches the emoji daily-game format', () => {
     const text = buildShareText({
-      gameNumber: 221,
+      gameNumber: 222,
       wpm: 86,
       accuracy: 0.987,
       elapsedMs: 120000, // 2:00
-      storiesCleared: 9,
-      storyCount: 14,
+      storiesCleared: 5,
+      storyCount: 12,
       streak: 7,
     });
     expect(text).toBe(
-      ['Keywulf #221', '86 WPM | 98.7%', '9/14 stories in 2:00', 'Streak 7', 'keywulf.com'].join('\n'),
+      [
+        `${WOLF} Keywulf #222`,
+        `${KEYS} 86 WPM | ${TARGET} 98.7% | ${TIMER} 2:00`,
+        `${DONE.repeat(5)}${MISS.repeat(7)} 5/12`,
+        `${FIRE} Streak 7`,
+        'keywulf.com',
+      ].join('\n'),
     );
   });
 
-  it('is stats-only: no free-form prose lines', () => {
+  it('shows a full green bar for a cleared briefing', () => {
     const text = buildShareText({
-      gameNumber: 1,
-      wpm: 50,
+      gameNumber: 300,
+      wpm: 104,
       accuracy: 1,
-      elapsedMs: 60000,
-      storiesCleared: 14,
-      storyCount: 14,
-      streak: 1,
+      elapsedMs: 101000, // 1:41
+      storiesCleared: 12,
+      storyCount: 12,
+      streak: 30,
     });
-    expect(text.split('\n')).toEqual([
-      'Keywulf #1',
-      '50 WPM | 100.0%',
-      '14/14 stories in 1:00',
-      'Streak 1',
-      'keywulf.com',
-    ]);
+    expect(text).toContain(`${DONE.repeat(12)} 12/12`);
+    expect(text).not.toContain(MISS);
   });
 
-  it('labels practice runs and omits streak', () => {
+  it('labels practice runs and omits the streak line', () => {
     const text = buildShareText({
-      gameNumber: 221,
+      gameNumber: 222,
       wpm: 90,
       accuracy: 0.95,
       elapsedMs: 120000,
-      storiesCleared: 8,
-      storyCount: 14,
+      storiesCleared: 6,
+      storyCount: 12,
       streak: 7,
       practice: true,
     });
-    expect(text).toContain('Keywulf #221 (practice)');
+    expect(text).toContain(`${WOLF} Keywulf #222 (practice)`);
+    expect(text).not.toContain(FIRE);
     expect(text).not.toContain('Streak');
+  });
+
+  it('omits the story bar when storyCount is unknown (legacy results)', () => {
+    const text = buildShareText({
+      gameNumber: 5,
+      wpm: 50,
+      accuracy: 1,
+      elapsedMs: 60000,
+      storiesCleared: 0,
+      storyCount: 0,
+      streak: 2,
+    });
+    expect(text).not.toContain(DONE);
+    expect(text).not.toContain(MISS);
+    expect(text).toContain('keywulf.com');
+  });
+
+  it('clamps an out-of-range cleared count', () => {
+    const text = buildShareText({
+      gameNumber: 5,
+      wpm: 50,
+      accuracy: 1,
+      elapsedMs: 60000,
+      storiesCleared: 99,
+      storyCount: 12,
+      streak: 2,
+    });
+    expect(text).toContain(`${DONE.repeat(12)} 12/12`);
   });
 
   it('rounds WPM and formats accuracy to one decimal', () => {
@@ -57,11 +97,12 @@ describe('buildShareText', () => {
       wpm: 86.7,
       accuracy: 0.9,
       elapsedMs: 65000,
-      storiesCleared: 10,
-      storyCount: 13,
+      storiesCleared: 3,
+      storyCount: 12,
       streak: 2,
     });
-    expect(text).toContain('87 WPM | 90.0%');
-    expect(text).toContain('10/13 stories in 1:05');
+    expect(text).toContain('87 WPM');
+    expect(text).toContain('90.0%');
+    expect(text).toContain('1:05');
   });
 });

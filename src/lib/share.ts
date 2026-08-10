@@ -16,22 +16,38 @@ export interface ShareData {
   practice?: boolean;
 }
 
+// Emojis are built from code points so this source file stays pure ASCII.
+// (Share text is never typed by the player, so emoji are fine here.)
+const E = {
+  wolf: String.fromCodePoint(0x1f43a), // wolf face
+  keys: String.fromCodePoint(0x2328, 0xfe0f), // keyboard
+  target: String.fromCodePoint(0x1f3af), // direct hit (accuracy)
+  timer: String.fromCodePoint(0x23f1, 0xfe0f), // stopwatch
+  cleared: String.fromCodePoint(0x1f7e9), // green square (story cleared)
+  missed: String.fromCodePoint(0x2b1c), // white square (story remaining)
+  fire: String.fromCodePoint(0x1f525), // streak
+};
+
 /**
- * Build the share text, e.g.:
+ * Build the spoiler-free share text, Wordle-style, e.g.:
  *
- *   Keywulf #221
- *   86 WPM | 98.7%
- *   9/14 stories in 2:00
- *   Streak 7
+ *   [wolf] Keywulf #222
+ *   [keyboard] 86 WPM | [target] 98.7% | [timer] 2:00
+ *   [green x5][white x7] 5/12
+ *   [fire] Streak 7
  *   keywulf.com
  */
 export function buildShareText(data: ShareData): string {
   const lines = [
-    `Keywulf #${data.gameNumber}${data.practice ? ' (practice)' : ''}`,
-    `${formatWpm(data.wpm)} WPM | ${formatAccuracyPct(data.accuracy)}%`,
-    `${data.storiesCleared}/${data.storyCount} stories in ${formatDuration(data.elapsedMs)}`,
+    `${E.wolf} Keywulf #${data.gameNumber}${data.practice ? ' (practice)' : ''}`,
+    `${E.keys} ${formatWpm(data.wpm)} WPM | ${E.target} ${formatAccuracyPct(data.accuracy)}% | ${E.timer} ${formatDuration(data.elapsedMs)}`,
   ];
-  if (!data.practice) lines.push(`Streak ${data.streak}`);
+  if (data.storyCount > 0) {
+    const done = Math.max(0, Math.min(data.storiesCleared, data.storyCount));
+    const bar = E.cleared.repeat(done) + E.missed.repeat(data.storyCount - done);
+    lines.push(`${bar} ${done}/${data.storyCount}`);
+  }
+  if (!data.practice) lines.push(`${E.fire} Streak ${data.streak}`);
   lines.push('keywulf.com');
   return lines.join('\n');
 }
@@ -53,12 +69,28 @@ function isMobileLike(): boolean {
   return (navigator.maxTouchPoints ?? 0) > 2 && /Mac/.test(ua);
 }
 
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    /* fall through to the legacy path */
+  // Clipboard writes require a focused document. When the tab was only just
+  // re-activated, the click can land a frame before focus is restored and
+  // writeText rejects with "Document is not focused" - so nudge focus and
+  // retry once before falling back.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (typeof document !== 'undefined' && !document.hasFocus()) {
+      try {
+        window.focus();
+      } catch {
+        /* ignore */
+      }
+      await wait(120);
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      await wait(120);
+    }
   }
   try {
     const ta = document.createElement('textarea');
