@@ -58,7 +58,10 @@ export function CompletedCard({ challenge, result, streak, onViewResult, onPract
         </button>
       </div>
 
-      <p className="start__hint">Come back after 00:00 UTC for the next briefing. Your streak continues if you play each day.</p>
+      <p className="start__hint">
+        The next briefing is published shortly after 00:15 UTC. Your streak continues if you play
+        each day.
+      </p>
     </div>
   );
 }
