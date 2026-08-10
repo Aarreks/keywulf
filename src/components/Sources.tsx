@@ -15,16 +15,30 @@ function domainOf(url: string): string {
   }
 }
 
+/** A title like "theguardian.com" is a domain fallback, not an article title. */
+function looksLikeDomain(title: string): boolean {
+  return /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(title.trim());
+}
+
 function SourceLink({ src }: { src: ChallengeSource }) {
-  const domain = domainOf(src.url);
-  // Title is "just the domain" when enrichment could not find an article title
-  // (or for pre-enrichment briefings). In that case show the domain alone.
-  const bare =
-    src.title.replace(/^www\./, '').toLowerCase() === domain.toLowerCase() || src.title.trim() === '';
+  const urlDomain = domainOf(src.url);
+  // Grounding redirect URLs live on Google's host; never show that as the
+  // publisher. Prefer a real publisher domain from the resolved URL.
+  const isRedirect = urlDomain.endsWith('vertexaisearch.cloud.google.com');
+  const bare = src.title.trim() === '' || looksLikeDomain(src.title);
+  if (bare) {
+    // Domain-only source (un-enriched briefing): the title IS the best label.
+    const label = src.title.trim() ? src.title.replace(/^www\./, '') : urlDomain;
+    return (
+      <a href={src.url} target="_blank" rel="noopener noreferrer" className="source-item">
+        <span className="source-item__title">{label}</span>
+      </a>
+    );
+  }
   return (
     <a href={src.url} target="_blank" rel="noopener noreferrer" className="source-item">
-      <span className="source-item__title">{bare ? domain : src.title}</span>
-      {!bare && domain && <span className="source-item__domain">{domain}</span>}
+      <span className="source-item__title">{src.title}</span>
+      {!isRedirect && urlDomain && <span className="source-item__domain">{urlDomain}</span>}
     </a>
   );
 }

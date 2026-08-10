@@ -48,17 +48,22 @@ export function extractHtmlTitle(html: string): string | null {
 }
 
 /** Derive a readable label from a URL slug: ".../colombia-earthquake-toll" ->
- * "Colombia earthquake toll". Returns null when the path has no usable slug. */
+ * "Colombia earthquake toll". Scans ALL path segments and keeps the wordiest
+ * one - many sites (e.g. Facebook) put the slug mid-path with a trailing
+ * numeric ID. Returns null when no segment has a usable slug. */
 export function titleFromSlug(url: string): string | null {
   try {
     const u = new URL(url);
-    const seg = u.pathname.split('/').filter(Boolean).pop() ?? '';
-    const words = seg
-      .replace(/\.(html?|php|aspx?|cms)$/i, '')
-      .split(/[-_]+/)
-      .filter((w) => w.length > 0 && !/^\d+$/.test(w));
-    if (words.length < 3) return null; // too short to be a headline slug
-    const s = words.join(' ').slice(0, MAX_TITLE_CHARS);
+    let best: string[] = [];
+    for (const seg of u.pathname.split('/').filter(Boolean)) {
+      const words = seg
+        .replace(/\.(html?|php|aspx?|cms)$/i, '')
+        .split(/[-_]+/)
+        .filter((w) => w.length > 0 && !/^\d+$/.test(w));
+      if (words.length > best.length) best = words;
+    }
+    if (best.length < 3) return null; // too short to be a headline slug
+    const s = best.join(' ').slice(0, MAX_TITLE_CHARS);
     return s.charAt(0).toUpperCase() + s.slice(1);
   } catch {
     return null;

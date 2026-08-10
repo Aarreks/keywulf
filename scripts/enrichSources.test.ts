@@ -51,6 +51,14 @@ describe('titleFromSlug', () => {
     );
   });
 
+  it('finds a mid-path slug when the last segment is a numeric ID', () => {
+    expect(
+      titleFromSlug(
+        'https://www.facebook.com/firstpostin/videos/houthis-release-footage-showing-mocha-port-attack/1053761509483',
+      ),
+    ).toBe('Houthis release footage showing mocha port attack');
+  });
+
   it('returns null for short or unusable paths', () => {
     expect(titleFromSlug('https://example.com/')).toBeNull();
     expect(titleFromSlug('https://example.com/news/12345')).toBeNull();
