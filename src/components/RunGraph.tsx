@@ -70,8 +70,10 @@ export function RunGraph({ samples }: Props) {
   useEffect(() => {
     const el = boxRef.current;
     if (!el) return;
-    const update = () =>
-      setSize({ w: Math.max(120, el.clientWidth), h: Math.max(48, el.clientHeight) });
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setSize({ w: Math.max(120, Math.round(r.width)), h: Math.max(48, Math.round(r.height)) });
+    };
     update();
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(update);
@@ -108,7 +110,8 @@ export function RunGraph({ samples }: Props) {
       aria-label={`WPM over the run, averaging ${Math.round(avg)}`}
       role="img"
     >
-      <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h}>
+      {/* Intentionally NO viewBox: user units = CSS pixels, no stretch ever. */}
+      <svg width={w} height={h}>
         <line className="telemetry__grid" x1="0" y1={h - 1} x2={w} y2={h - 1} />
         <line className="telemetry__avg" x1="0" y1={avgY.toFixed(1)} x2={w} y2={avgY.toFixed(1)} />
         <path className="telemetry__area" d={area} />

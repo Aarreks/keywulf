@@ -266,10 +266,10 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // Build the telemetry point string from the rolling window. Coordinates are
-  // computed in PIXEL space with the viewBox matched to the element's real
-  // size, so strokes stay uniform and round on every screen (a stretched unit
-  // viewBox turned the trace into a chisel-tip line).
+  // Build the telemetry point string from the rolling window. The SVG has NO
+  // viewBox, so its user space IS CSS pixels - scaling distortion (the chisel-
+  // tip line) is impossible by construction. getBoundingClientRect is used for
+  // measurement because clientWidth is unreliable on SVG elements.
   const renderTelemetry = useCallback(() => {
     const samples = teleRef.current;
     const line = teleLineRef.current;
@@ -277,9 +277,9 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     if (!line || !area) return;
     const svg = line.ownerSVGElement;
     if (!svg) return;
-    const w = svg.clientWidth || 600;
-    const h = svg.clientHeight || 66;
-    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const rect = svg.getBoundingClientRect();
+    const w = rect.width || 600;
+    const h = rect.height || 66;
     if (samples.length < 2) {
       line.setAttribute('points', '');
       area.setAttribute('points', '');
@@ -494,7 +494,9 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
 
       {settings.showGraph && (
         <div className="telemetry" aria-hidden="true">
-          <svg preserveAspectRatio="none">
+          {/* Intentionally NO viewBox: user units = CSS pixels, so the trace
+              can never be stretched into a chisel shape. */}
+          <svg>
             <polygon ref={teleAreaRef} className="telemetry__area" points="" />
             <polyline ref={teleLineRef} className="telemetry__line" points="" />
           </svg>
