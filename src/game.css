@@ -665,11 +665,14 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.source-item {
+/* Selector carries .sources for specificity: `.sources a { display: block }`
+   was overriding the flex layout and jamming the domain flush to the title. */
+.sources a.source-item {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 14px;
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 .source-item__title {
   font-family: var(--font-serif);
@@ -682,6 +685,7 @@
   text-transform: uppercase;
   color: var(--muted);
   flex: none;
+  margin-left: auto;
 }
 
 .errbox {
