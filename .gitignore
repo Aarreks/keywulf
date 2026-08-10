@@ -1,0 +1,21 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# Environment / secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Editor / tooling
+.vscode/*
+!.vscode/extensions.json
+.idea
+.wrangler
+node_modules/.tmp
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

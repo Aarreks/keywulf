@@ -1,0 +1,378 @@
+/* Keywulf design system.
+ *
+ * Editorial, restrained news aesthetic with a warm "ember" accent that
+ * intensifies with typing performance. The accent color is driven by a single
+ * smoothed --energy custom property (0..1) computed client-side, so the whole
+ * interface reacts to how you're doing without any server involvement.
+ *
+ * Performance state is NEVER communicated by color alone: WPM/accuracy numerals,
+ * the telemetry amplitude, and the progress meter all carry it too.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Type */
+  --font-sans: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+
+  /* Live performance signal (updated imperatively during play). */
+  --energy: 0;
+
+  /* Accent derived from energy: cool slate when quiet -> ember when firing.
+     Because --energy is smoothed, the color drifts rather than flashes. */
+  --accent-h: calc(212 - (212 - 20) * var(--energy));
+  --accent-s: calc((26 + 62 * var(--energy)) * 1%);
+  --accent-l: calc((52 + 6 * var(--energy)) * 1%);
+  --accent: hsl(var(--accent-h) var(--accent-s) var(--accent-l));
+  --accent-soft: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.16);
+  --accent-line: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.42);
+
+  /* Fixed brand ember (independent of energy) for static brand elements. */
+  --ember: #ff7a3c;
+  --ember-deep: #e0452f;
+
+  /* Motion */
+  --dur-fast: 90ms;
+  --dur: 180ms;
+  --dur-slow: 420ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --maxw: 940px;
+}
+
+/* ---- Dark theme (default look) ---- */
+:root[data-theme='dark'] {
+  --bg: #0c0d11;
+  --bg-2: #101218;
+  --panel: #14161d;
+  --panel-2: #191c25;
+  --ink: #f2f0ea;
+  --ink-2: #c7cad3;
+  --muted: #8b909c;
+  --faint: #565b68;
+  --line: #23262f;
+  --line-strong: #313643;
+  --good: #79d19b;
+  --bad: #ff6b6b;
+  --bad-bg: rgba(255, 107, 107, 0.14);
+  --shadow: 0 20px 60px -30px rgba(0, 0, 0, 0.8);
+  --upcoming: #6b7180;
+}
+
+/* ---- Light theme (warm paper, not just inverted) ---- */
+:root[data-theme='light'] {
+  --bg: #f4f1ea;
+  --bg-2: #efeade;
+  --panel: #fbf9f4;
+  --panel-2: #f3efe6;
+  --ink: #191713;
+  --ink-2: #3c3a34;
+  --muted: #6d6a61;
+  --faint: #a49f93;
+  --line: #e2dccf;
+  --line-strong: #d2caba;
+  --good: #2f8f5b;
+  --bad: #cc3d3d;
+  --bad-bg: rgba(204, 61, 61, 0.1);
+  --shadow: 0 24px 60px -34px rgba(60, 50, 30, 0.35);
+  --upcoming: #b6b0a2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* Ambient background: two faint radial washes whose warmth tracks energy.
+   Fixed to the viewport, purely decorative, GPU-cheap. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      60% 50% at 50% -8%,
+      hsl(var(--accent-h) var(--accent-s) 50% / calc(0.1 + 0.18 * var(--energy))),
+      transparent 70%
+    ),
+    radial-gradient(50% 40% at 90% 110%, var(--accent-soft), transparent 70%);
+  transition: background var(--dur) linear;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.1;
+  margin: 0;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+/* Tabular numerals for all telemetry/stat readouts. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ---------------------------------------------------------------- layout -- */
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 32px);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+}
+.brand__mark {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+.brand__word {
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+.brand__word b {
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.navbtns {
+  display: flex;
+  gap: 4px;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 48px;
+}
+
+.footer {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 20px 0 32px;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.footer a {
+  color: var(--muted);
+}
+.footer a:hover {
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------- buttons -- */
+.btn {
+  --_bg: var(--panel);
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: var(--_bg);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease), border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  will-change: transform;
+}
+.btn:hover {
+  border-color: var(--accent-line);
+}
+.btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn--primary {
+  background: linear-gradient(180deg, var(--ember), var(--ember-deep));
+  border-color: transparent;
+  color: #1a0f08;
+  box-shadow: 0 10px 30px -12px rgba(224, 69, 47, 0.6);
+}
+.btn--primary:hover {
+  box-shadow: 0 14px 36px -12px rgba(224, 69, 47, 0.7);
+}
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn--ghost:hover {
+  color: var(--ink);
+  background: var(--panel);
+  border-color: var(--line);
+}
+.btn--big {
+  font-size: 17px;
+  padding: 14px 28px;
+}
+.btn--icon {
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.iconbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--dur), background var(--dur), border-color var(--dur);
+}
+.iconbtn:hover {
+  color: var(--ink);
+  background: var(--panel);
+  border-color: var(--line);
+}
+.iconbtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Small pill/labels */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+.pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  border: 0;
+  margin: 0;
+}
+
+/* Card / panel */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: clamp(18px, 3vw, 28px);
+}
+
+/* Section entrance */
+.enter {
+  animation: enter var(--dur-slow) var(--ease) both;
+}
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Accessible visually-hidden text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Respect reduced motion + reduced intensity. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  body::before {
+    transition: none;
+  }
+}
+:root.reduced-intensity body::before {
+  display: none;
+}

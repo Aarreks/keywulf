@@ -1,0 +1,17 @@
+# Cloudflare Workers Static Assets configuration for Keywulf.
+#
+# This deploys the Vite build output (./dist) as static assets with NO Worker
+# business logic. Cloudflare serves the files directly from its edge; there is
+# no server code executing per request. Caching is controlled by public/_headers
+# (copied into ./dist at build time).
+#
+# Docs: https://developers.cloudflare.com/workers/static-assets/
+
+name = "keywulf"
+compatibility_date = "2024-11-01"
+
+[assets]
+directory = "./dist"
+# Keywulf is a single-page app (view state lives in the client, not the URL),
+# so unknown paths fall back to index.html.
+not_found_handling = "single-page-application"

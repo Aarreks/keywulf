@@ -1,0 +1,66 @@
+name: Daily challenge
+
+# Generates the shared daily Keywulf challenge with Gemini (grounded by Google
+# Search), validates it hard, builds, and deploys to Cloudflare Workers Static
+# Assets. Runs ONCE per day for the entire world - never per visitor.
+#
+# GitHub cron is UTC. 00:15 UTC gives news sites time to settle after midnight.
+# Also runnable on demand via "Run workflow" (workflow_dispatch).
+#
+# If ANY step fails (generation, validation, tests, build, deploy) the job fails
+# loudly and does NOT deploy, so a broken day never replaces the last good
+# puzzle already live on Cloudflare.
+
+on:
+  schedule:
+    - cron: '15 0 * * *' # 00:15 UTC daily
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Override challenge date (YYYY-MM-DD, UTC). Leave blank for today.'
+        required: false
+        default: ''
+
+# Never let two deploys race each other.
+concurrency:
+  group: keywulf-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate today's challenge (Gemini + Google Search grounding)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          KEYWULF_DATE: ${{ github.event.inputs.date }}
+        run: npm run generate:daily
+
+      - name: Validate the generated challenge
+        run: npm run validate:challenge
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build static site
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers Static Assets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

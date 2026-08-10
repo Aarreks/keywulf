@@ -1,0 +1,648 @@
+/* Keywulf gameplay surface: HUD, the typing passage, live telemetry, the
+ * result screen, and the signature completion animation. Tuned so nothing here
+ * causes text reflow during typing and the caret feels instantaneous. */
+
+/* ------------------------------------------------------------------ start -- */
+.start {
+  display: grid;
+  gap: 28px;
+  padding-top: clamp(12px, 4vh, 40px);
+}
+.start__head {
+  display: grid;
+  gap: 14px;
+}
+.start__title {
+  font-size: clamp(40px, 8vw, 82px);
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+}
+.start__title b {
+  color: var(--accent);
+}
+.start__tag {
+  font-size: clamp(17px, 2.4vw, 22px);
+  color: var(--ink-2);
+  font-weight: 700;
+  max-width: 34ch;
+}
+.start__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.start__meta .tnum {
+  color: var(--ink);
+  font-weight: 700;
+}
+.start__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.start__hint {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------------- HUD --- */
+.stage {
+  display: grid;
+  gap: 18px;
+  padding-top: 8px;
+}
+.hud {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(14px, 4vw, 40px);
+  transition: opacity var(--dur-slow) var(--ease);
+}
+.hud--calm {
+  opacity: 0.35;
+}
+.hud:hover {
+  opacity: 1;
+}
+.stat {
+  display: grid;
+  gap: 2px;
+}
+.stat__val {
+  font-size: clamp(22px, 3.4vw, 30px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.stat__val--accent {
+  color: var(--accent);
+}
+.stat__label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.hud__spacer {
+  flex: 1;
+}
+.hud__story {
+  text-align: right;
+}
+
+/* --------------------------------------------------------------- passage -- */
+.passage {
+  position: relative;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: text;
+  /* Passage type scale lives here so BOTH the fixed-height viewport (parent)
+     and the flowing text (child) can read it. Custom properties inherit down,
+     so defining --passage-lh on the child would leave the viewport unable to
+     size its window. */
+  --passage-fs: clamp(20px, 3.1vw, 30px);
+  --passage-lh: calc(var(--passage-fs) * 1.85);
+}
+:root[data-fontsize='small'] .passage {
+  --passage-fs: clamp(17px, 2.5vw, 24px);
+}
+:root[data-fontsize='large'] .passage {
+  --passage-fs: clamp(23px, 3.8vw, 36px);
+}
+/* Thin animated top keyline whose glow tracks energy. */
+.passage::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: calc(0.35 + 0.65 * var(--energy));
+  transition: opacity var(--dur) linear;
+}
+.passage__viewport {
+  --lines: 5;
+  height: calc(var(--lines) * var(--passage-lh));
+  overflow: hidden;
+  padding: clamp(22px, 4vw, 40px) clamp(20px, 4vw, 40px);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 12%, #000 78%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 12%, #000 78%, transparent);
+}
+.passage__flow {
+  font-size: var(--passage-fs);
+  line-height: var(--passage-lh);
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: var(--upcoming);
+  position: relative;
+  transition: transform var(--dur) var(--ease);
+  will-change: transform;
+  word-break: break-word;
+}
+
+.ch {
+  color: var(--upcoming);
+  transition: color var(--dur-fast) linear;
+  border-radius: 3px;
+}
+.ch.correct {
+  color: var(--ink);
+}
+.ch.incorrect {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+/* Show mistyped spaces as a clear block (space has no glyph). */
+.ch.incorrect.sp {
+  background: var(--bad-bg);
+  box-shadow: inset 0 -0.16em 0 var(--bad);
+}
+.ch.done-story {
+  opacity: 0.55;
+}
+
+/* Caret: a tactile block that sits on the current character. */
+.caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 1.25em;
+  background: var(--accent);
+  border-radius: 2px;
+  transform: translate(0, 0);
+  transition: transform var(--dur-fast) var(--ease), height var(--dur) var(--ease);
+  box-shadow: 0 0 calc(6px + 14px * var(--energy)) var(--accent);
+  pointer-events: none;
+  will-change: transform;
+}
+.caret.blink {
+  animation: caretblink 1.05s steps(1) infinite;
+}
+@keyframes caretblink {
+  50% {
+    opacity: 0.25;
+  }
+}
+.caret.bump {
+  animation: caretbump 120ms var(--ease);
+}
+@keyframes caretbump {
+  40% {
+    transform: translate(var(--cx), var(--cy)) scaleY(0.82);
+  }
+}
+
+/* Hidden input that owns the mobile soft keyboard + physical key events. */
+.capture {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px; /* >=16px prevents iOS zoom-on-focus */
+  cursor: text;
+}
+
+/* Progress meter under the passage. */
+.progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.progress__fill {
+  height: 100%;
+  width: calc(var(--progress, 0) * 100%);
+  background: linear-gradient(90deg, var(--accent), var(--ember));
+  transition: width var(--dur) var(--ease);
+}
+
+/* --------------------------------------------------------------- telemetry */
+.telemetry {
+  position: relative;
+  height: 66px;
+  opacity: 0.9;
+}
+.telemetry svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.telemetry__grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.telemetry__area {
+  fill: var(--accent-soft);
+}
+.telemetry__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.telemetry__err {
+  fill: var(--bad);
+}
+.telemetry__label {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------- story tag */
+.storytag {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 20px;
+}
+.storytag__rule {
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+  transform-origin: left;
+}
+.storytag__cat {
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+.storytag.turn .storytag__rule {
+  animation: drawrule var(--dur-slow) var(--ease);
+}
+@keyframes drawrule {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ---------------------------------------------------------------- result -- */
+.result {
+  display: grid;
+  gap: 26px;
+  padding-top: clamp(8px, 3vh, 28px);
+}
+.result__hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 28px 0 12px;
+  text-align: center;
+}
+.result__label {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 800;
+}
+.result__wpm {
+  font-size: clamp(84px, 20vw, 168px);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  color: var(--accent);
+}
+.result__wpm span {
+  font-size: 0.28em;
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-left: 0.15em;
+}
+/* Signature "howl" rings on completion. */
+.howl {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.howl i {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  animation: howl 1500ms var(--ease) forwards;
+}
+.howl i:nth-child(2) {
+  animation-delay: 140ms;
+}
+.howl i:nth-child(3) {
+  animation-delay: 280ms;
+}
+@keyframes howl {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(46);
+    opacity: 0;
+  }
+}
+
+.statgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.statgrid .cell {
+  background: var(--panel);
+  padding: 16px 18px;
+  display: grid;
+  gap: 4px;
+}
+.cell__val {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.cell__label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.cell__val--good {
+  color: var(--good);
+}
+
+.result__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.share-ok {
+  color: var(--good);
+  font-weight: 800;
+}
+
+/* ------------------------------------------------------- completed-today -- */
+.done-card {
+  display: grid;
+  gap: 22px;
+  padding-top: clamp(10px, 4vh, 40px);
+}
+.done-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--good);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------------------- history -- */
+.spark {
+  width: 100%;
+  height: 120px;
+  display: block;
+  overflow: visible;
+}
+.spark__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.spark__dot {
+  fill: var(--ember);
+}
+.spark__axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.spark__glabel {
+  fill: var(--faint);
+  font-size: 9px;
+}
+
+.tablelist {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.tablelist__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--panel);
+  font-size: 14px;
+  align-items: center;
+}
+.tablelist__row .muted {
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- dialog -- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: fade var(--dur) var(--ease);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.dialog {
+  width: min(460px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+}
+.dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.field:last-child {
+  border-bottom: 0;
+}
+.field__label {
+  font-weight: 700;
+  font-size: 15px;
+}
+.field__desc {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Segmented control */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.seg button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #150c07;
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: background var(--dur);
+  flex: none;
+}
+.switch[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: transparent;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--dur) var(--ease);
+}
+.switch[aria-pressed='true']::after {
+  transform: translateX(20px);
+}
+
+/* Prose (about) */
+.prose {
+  max-width: 68ch;
+  color: var(--ink-2);
+}
+.prose h2 {
+  color: var(--ink);
+  margin: 26px 0 10px;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.prose p {
+  margin: 0 0 14px;
+}
+.prose ul {
+  margin: 0 0 14px;
+  padding-left: 20px;
+}
+.prose li {
+  margin: 6px 0;
+}
+
+.sources {
+  display: grid;
+  gap: 10px;
+}
+.sources a {
+  color: var(--ink-2);
+  font-size: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  display: block;
+  word-break: break-word;
+}
+.sources a:hover {
+  color: var(--accent);
+}
+
+.errbox {
+  display: grid;
+  gap: 16px;
+  place-items: start;
+  padding-top: 12vh;
+}
+
+@media (max-width: 560px) {
+  .hud {
+    gap: 18px;
+  }
+  .hud__story {
+    display: none;
+  }
+  .result__actions .btn,
+  .start__actions .btn {
+    flex: 1;
+  }
+  /* Fewer visible lines so the passage stays above the soft keyboard. */
+  .passage__viewport {
+    --lines: 4;
+    padding: 20px 18px;
+  }
+}
+/* Very short viewports (e.g. landscape phones, keyboard open): tighter window. */
+@media (max-height: 620px) {
+  .passage__viewport {
+    --lines: 3;
+  }
+}

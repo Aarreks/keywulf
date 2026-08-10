@@ -1,0 +1,29 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Keywulf - Type the world">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0e0f14"/>
+      <stop offset="1" stop-color="#15110f"/>
+    </linearGradient>
+    <linearGradient id="ember" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a4c"/>
+      <stop offset="1" stop-color="#e0452f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- thin telemetry line motif -->
+  <polyline points="0,470 150,455 250,462 360,430 470,441 560,405 660,418 780,372 890,392 1010,350 1200,368"
+            fill="none" stroke="url(#ember)" stroke-width="3" opacity="0.55"/>
+  <line x1="80" y1="120" x2="80" y2="510" stroke="#2a2c34" stroke-width="2"/>
+
+  <!-- mark -->
+  <g transform="translate(120,150)" fill="none" stroke="url(#ember)" stroke-width="9" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0 96 L0 0 L48 48"/>
+    <path d="M152 96 L152 0 L104 48"/>
+    <path d="M48 48 L76 76 L104 48"/>
+  </g>
+
+  <text x="120" y="360" font-family="Lato, Arial, sans-serif" font-weight="900" font-size="132" letter-spacing="-3" fill="#f4f1ea">Keywulf</text>
+  <text x="124" y="430" font-family="Lato, Arial, sans-serif" font-weight="700" font-size="42" fill="#ff8a4c">Type the world.</text>
+  <text x="124" y="486" font-family="Lato, Arial, sans-serif" font-weight="400" font-size="30" fill="#9aa0ab">A daily typing game built from the world's most important news.</text>
+</svg>
