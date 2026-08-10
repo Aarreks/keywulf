@@ -299,8 +299,8 @@ export function App() {
             <a onClick={() => setPhase('stats')} style={{ cursor: 'pointer' }}>
               Stats
             </a>
-            <a href="https://keywulf.com" onClick={(e) => e.preventDefault()}>
-              keywulf.com
+            <a href="https://phosfox.us" target="_blank" rel="noopener noreferrer">
+              by Phosfox
             </a>
           </span>
         </footer>
