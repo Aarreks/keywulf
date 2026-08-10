@@ -1,316 +1,256 @@
 {
   "schemaVersion": 1,
-  "date": "2026-08-09",
-  "gameNumber": 221,
-  "title": "World Briefing",
+  "date": "2026-08-10",
+  "gameNumber": 222,
+  "title": "The Keywulf Briefing",
   "stories": [
     {
       "rank": 1,
-      "headline": "Ceasefire talks resume as shelling continues",
-      "body": "Negotiators returned to the table while artillery kept making its own statement along the border.",
-      "category": "Conflict",
+      "headline": "Massive Earthquake Strikes Western Colombia",
+      "body": "A magnitude 7.4 earthquake killed at least 47 people and collapsed buildings across several western cities.",
+      "category": "Disaster",
       "regions": [
-        "Europe"
+        "Americas"
       ],
-      "importance": 97,
-      "sources": [
-        {
-          "title": "Reuters World",
-          "url": "https://www.reuters.com/world/"
-        },
-        {
-          "title": "AP News",
-          "url": "https://apnews.com/hub/world-news"
-        }
-      ]
+      "importance": 95,
+      "sources": []
     },
     {
       "rank": 2,
-      "headline": "Major central banks signal a pause on rates",
-      "body": "Officials hinted borrowing costs may have peaked, then spent several paragraphs refusing to promise anything.",
-      "category": "Economy",
+      "headline": "Ukrainian Drone Strike Hits Russian Refinery",
+      "body": "A strike on an oil refinery over 600 miles inside Russia killed at least 12 people.",
+      "category": "Conflict",
       "regions": [
-        "Global"
+        "Europe",
+        "Asia"
       ],
-      "importance": 92,
-      "sources": [
-        {
-          "title": "Reuters Markets",
-          "url": "https://www.reuters.com/markets/"
-        },
-        {
-          "title": "Financial Times",
-          "url": "https://www.ft.com/"
-        }
-      ]
+      "importance": 90,
+      "sources": []
     },
     {
       "rank": 3,
-      "headline": "Coastal storm forces mass evacuations",
-      "body": "Hundreds of thousands were ordered inland as forecasters warned the system could stall over the coast for days.",
+      "headline": "Netanyahu Rejects US Gaza Peace Plan",
+      "body": "The Israeli Prime Minister publicly dismissed the 15-point proposal, exposing a growing rift with Washington.",
+      "category": "Diplomacy",
+      "regions": [
+        "Middle East"
+      ],
+      "importance": 88,
+      "sources": []
+    },
+    {
+      "rank": 4,
+      "headline": "Typhoon Dolphin Forces Million to Evacuate",
+      "body": "The storm brought Shanghai its heaviest rainfall in 150 years and triggered massive evacuations across eastern China.",
       "category": "Disaster",
       "regions": [
         "Asia"
       ],
-      "importance": 88,
-      "sources": [
-        {
-          "title": "BBC News",
-          "url": "https://www.bbc.com/news"
-        },
-        {
-          "title": "Al Jazeera",
-          "url": "https://www.aljazeera.com/"
-        }
-      ]
-    },
-    {
-      "rank": 4,
-      "headline": "Parliament passes sweeping data privacy law",
-      "body": "Companies face large fines for misusing personal data, a practice previously known as the business model.",
-      "category": "Policy",
-      "regions": [
-        "Europe"
-      ],
-      "importance": 80,
-      "sources": [
-        {
-          "title": "Politico Europe",
-          "url": "https://www.politico.eu/"
-        }
-      ]
+      "importance": 85,
+      "sources": []
     },
     {
       "rank": 5,
-      "headline": "Health agencies track new respiratory outbreak",
-      "body": "Officials urged basic precautions and said there is no evidence yet of wide transmission.",
+      "headline": "Iran Rejects Hormuz Transit Proposal",
+      "body": "Tehran dismissed the US-Oman plan, demanding instead that Washington lift its naval blockade and pay war damages first.",
+      "category": "Diplomacy",
+      "regions": [
+        "Middle East"
+      ],
+      "importance": 82,
+      "sources": []
+    },
+    {
+      "rank": 6,
+      "headline": "Russia Plans North Korean Troop Deployment",
+      "body": "Ukraine warned that Moscow intends to deploy up to 50,000 North Korean soldiers to gain modern combat experience.",
+      "category": "Conflict",
+      "regions": [
+        "Europe",
+        "Asia"
+      ],
+      "importance": 80,
+      "sources": []
+    },
+    {
+      "rank": 7,
+      "headline": "Three Nations Sign Mutual Defence Pact",
+      "body": "Saudi Arabia, Turkey, and Pakistan signed a mutual defence pact, promising absolute unity until the next regional crisis.",
+      "category": "Diplomacy",
+      "regions": [
+        "Middle East",
+        "Asia"
+      ],
+      "importance": 78,
+      "sources": []
+    },
+    {
+      "rank": 8,
+      "headline": "Immigrants Flee Rising South African Violence",
+      "body": "Over 178,000 African immigrants have fled back to their home countries following escalating harassment and denial of services.",
+      "category": "Migration",
+      "regions": [
+        "Africa"
+      ],
+      "importance": 75,
+      "sources": []
+    },
+    {
+      "rank": 9,
+      "headline": "Congo Ebola Outbreak Began Months Untracked",
+      "body": "The World Health Organization warned the fast-growing outbreak began months before its official declaration in May.",
       "category": "Health",
       "regions": [
         "Africa"
       ],
-      "importance": 76,
-      "sources": [
-        {
-          "title": "World Health Organization",
-          "url": "https://www.who.int/news"
-        }
-      ]
-    },
-    {
-      "rank": 6,
-      "headline": "Chipmaker unveils faster, cooler processors",
-      "body": "The new chips promise more power for less electricity, which data centers currently consume like a midsize country.",
-      "category": "Technology",
-      "regions": [
-        "Asia",
-        "United States"
-      ],
-      "importance": 71,
-      "sources": [
-        {
-          "title": "Reuters Technology",
-          "url": "https://www.reuters.com/technology/"
-        }
-      ]
-    },
-    {
-      "rank": 7,
-      "headline": "Coalition government sworn in after long deadlock",
-      "body": "The new alliance pledged unity, effective immediately, budget negotiations permitting.",
-      "category": "Politics",
-      "regions": [
-        "Europe"
-      ],
-      "importance": 66,
-      "sources": [
-        {
-          "title": "The Guardian",
-          "url": "https://www.theguardian.com/world"
-        }
-      ]
-    },
-    {
-      "rank": 8,
-      "headline": "Oil prices slip as supply fears ease",
-      "body": "Producers signaled steady output, giving importers a rare quiet week.",
-      "category": "Markets",
-      "regions": [
-        "Middle East"
-      ],
-      "importance": 61,
-      "sources": [
-        {
-          "title": "Bloomberg Markets",
-          "url": "https://www.bloomberg.com/markets"
-        }
-      ]
-    },
-    {
-      "rank": 9,
-      "headline": "Appeals court upholds landmark climate ruling",
-      "body": "The government must strengthen emissions targets after arguing, unsuccessfully, that it was trying.",
-      "category": "Climate",
-      "regions": [
-        "Global"
-      ],
-      "importance": 57,
-      "sources": [
-        {
-          "title": "Reuters Legal",
-          "url": "https://www.reuters.com/legal/"
-        }
-      ]
+      "importance": 72,
+      "sources": []
     },
     {
       "rank": 10,
-      "headline": "Early trial results promising for new vaccine",
-      "body": "Researchers reported encouraging data and the customary reminder that larger studies are needed.",
-      "category": "Science",
-      "regions": [
-        "Global"
-      ],
-      "importance": 52,
-      "sources": [
-        {
-          "title": "Nature News",
-          "url": "https://www.nature.com/news"
-        }
-      ]
-    },
-    {
-      "rank": 11,
-      "headline": "Regulators clear major cross-border merger",
-      "body": "The deal was approved with conditions meant to protect competition from the people buying it.",
-      "category": "Business",
-      "regions": [
-        "United States",
-        "Europe"
-      ],
-      "importance": 47,
-      "sources": [
-        {
-          "title": "Wall Street Journal",
-          "url": "https://www.wsj.com/"
-        }
-      ]
-    },
-    {
-      "rank": 12,
-      "headline": "Aid convoys reach flood-isolated region",
-      "body": "The first relief supplies arrived after a week of impassable roads.",
-      "category": "Humanitarian",
+      "headline": "Taiwan Throttles Internet in War Games",
+      "body": "Authorities slowed mobile internet for 17 million people, demonstrating how modern resilience begins with digital paralysis.",
+      "category": "Technology",
       "regions": [
         "Asia"
       ],
-      "importance": 42,
-      "sources": [
-        {
-          "title": "UN News",
-          "url": "https://news.un.org/en/"
-        }
-      ]
+      "importance": 70,
+      "sources": []
     },
     {
-      "rank": 13,
-      "headline": "Drought pushes grain prices to seasonal high",
-      "body": "A dry planting season has traders and bakers watching the same forecasts.",
-      "category": "Food",
+      "rank": 11,
+      "headline": "Wildfires Force Evacuations in British Columbia",
+      "body": "Over 20,000 people fled the Bald Range fire, which doubled in size and caused one death.",
+      "category": "Disaster",
       "regions": [
-        "Africa",
-        "Global"
+        "Americas"
       ],
-      "importance": 38,
-      "sources": [
-        {
-          "title": "Reuters Commodities",
-          "url": "https://www.reuters.com/markets/commodities/"
-        }
-      ]
+      "importance": 68,
+      "sources": []
     },
     {
-      "rank": 14,
-      "headline": "Astronomers spot largest known comet fragment",
-      "body": "The object poses no threat to Earth, astronomers said, sounding slightly disappointed.",
-      "category": "Science",
+      "rank": 12,
+      "headline": "Europe Braces for Fifth Heat Wave",
+      "body": "Extreme summer weather has cost the continental economy billions, proving that even the climate has a budget deficit.",
+      "category": "Climate",
       "regions": [
-        "Global"
+        "Europe"
       ],
-      "importance": 33,
-      "sources": [
-        {
-          "title": "Nature News",
-          "url": "https://www.nature.com/news"
-        }
-      ]
+      "importance": 65,
+      "sources": []
     }
   ],
   "sourcePool": [
     {
-      "title": "Reuters World",
-      "url": "https://www.reuters.com/world/"
+      "title": "wikipedia.org",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGtKdVcU6hOZxhk3GGHlahbnnH2VBwJ9rkh8dunHwKPOvOxpT7pt68BTTyUqCePft2_JPIGtoHz4VZ_s94VspFIDGg9DExHuIFi-Q6BGsaKsjCj1J90u6J9y4Ieyik32aMeIqKaYpvO4M3S0Mvjwh-fyg=="
     },
     {
-      "title": "AP News",
-      "url": "https://apnews.com/hub/world-news"
+      "title": "businessinsider.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEZ-eBIj6NQSYI4KRllSg00aF0b1IYQkJzIuBkYgFxEhU15xWC-Ia8OO007kWenBhmuGFCwV4pdswywMyPWYP5GCUCzRpoZYU0UdKD8Nr1tzpehiqDrzo7U1ncRrL-lKSYZwFsP4CJrHWsKWNXnfbqjYO3qAxOJeojpXRTsRpUifdRlAUX06iP6oqcLVZUPnkdbXGeOk9m1CM6TYeYuut-zDXr2uK5S7Qf1ptxza-w4EE0SJCP6R8FSRFTsGOPF0u94pkE="
     },
     {
-      "title": "Reuters Markets",
-      "url": "https://www.reuters.com/markets/"
+      "title": "thehindu.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHtAS6tJIb6VTk7dZF015ECCrTJ1dl190Mv1G3ECJrtTFYovTSDHnHU-IwiCm-aXCrSmmHfKQcOGmMfVQS8O_OcP-0eVPaJMbTav8UwtGBfg8HGceIILGgz3_223o70RIlvJRGm9aCCY_AkuN3jQMKmzVFLeUh2w1zgLn-XvuTyl-7qBPtDHs_OJoW6j3C9RIp14ZnKHi370Z4ZfJ2pwPxtxiqZNnb4O4eMaak1VcRwnevVZ0Z0LlHe8DizJ3xzCUzF3aPKEZ55myFnwcEJ4BGOZVZn"
     },
     {
-      "title": "Financial Times",
-      "url": "https://www.ft.com/"
+      "title": "theguardian.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQG92tzLOGHmfz1_nvmnEh7mlkSDF3AjP9lxZDMIRY-pXejfqHb0ZIActcWp18ISCi5k02gnxyjOnWEq0b5bX-7BF5l5eJw2-lqeKSJOwV7CHyIIRyXMHKJZXI1FvL2YiTMi_GLyPwxjxPnNfOX71nVu6ZwIxK-IfOXpqbMd28mHQxymeD_UfczVNtv9TjYqqOTds-wmI-ATrdguqUVV3bmfWKLeehSmmY7I"
     },
     {
-      "title": "BBC News",
-      "url": "https://www.bbc.com/news"
+      "title": "time.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEktLHWbxckJ-XHTUxoH4m_VHz760eS74U1-zRICjxrDeSn8AwlxFaDUbl0Rl30KQaJsvzOPFSnaCdAVxEl1vQUZe3W32vBLAOFBocaPRQh4vnDTRce3EQ2nVBPtIH9dbEe1nLVZlX6pNZVK3ukXe9svcYk6X9vTCFQBC8y4hv4hKiyp1HB0VrUNGPXKdBBtPR8"
     },
     {
-      "title": "Al Jazeera",
-      "url": "https://www.aljazeera.com/"
+      "title": "theguardian.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHSEbCcWGBuMYIP4DWzbrkVSSMrpQs5Uxdx37ilUUMdXGH4YEe84mdUCaRMTs7px8WzaAS_oJjSXcoS5hlq9xuADGeSKtVB7DGNK7i02kAT18rj3SyJz1G-g9SOKrzTFRCsM3H_4gziEsjxknWdTbvligCqQ_uxo4grzHTByFVO8-USNkWv9yBoWPmvwlSvt_2wvJTcGYwVE2K748L1LNFFQiSCJ_HoS6U_NL_FUpNGBtHsMbSc"
     },
     {
-      "title": "Politico Europe",
-      "url": "https://www.politico.eu/"
+      "title": "democracynow.org",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHtJmtWQD4DvJLkyU9hmKYDkiAg6Sf1J-ubQi19FWc_5N5Af7xKoHMZL9VDhPiVzbYigfvGDdfctYCvAHT-FXnqhhxXbJKjE2rng3ms34B-F_RbOoV3-5K-XaUlUB-KUAQPJn6JJIGS_RcBs02Xpd32bo8Zuf0sN0zS30KCFl81Wm_SLEhmgVK8FqDKl_uka29WjQ7zhpNodLW6iYvfKbQbSrvTQw=="
     },
     {
-      "title": "World Health Organization",
-      "url": "https://www.who.int/news"
+      "title": "westfaironline.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFiqqcbFxK-w02_TlWQlk4MdJIAppbl_W9kSlvajzNERv5jiOl3kjcP8LBWcML4Tg52aVs0MBTh--I9HAcOk3ZnX_wVfTgbia7tZZ5IjY7M4T9lTStsecad3ll8Xryi8k82LjB6xEW622eGCihVyc4Unfkr5HM7SAaqZA=="
     },
     {
-      "title": "Reuters Technology",
-      "url": "https://www.reuters.com/technology/"
+      "title": "globalnews.ca",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQESel4HAPuGO0SHMsi6LAr2PAoivLRQFskuxuOLmRp3NA_lq6n3fpo3tMqRMep7ySlbcowjrooZsI0DyTuAdfqE8u6RLVG7ZGHKOlEiDAgH7guADUT70UScpGxdmxiwQCY8UEppBo_RNvbQ_Zx1zNFYBMU14rzdNwzVIU1ZStPWWLhM"
     },
     {
-      "title": "The Guardian",
-      "url": "https://www.theguardian.com/world"
+      "title": "theguardian.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGyE_4IoN6IpoVvfzsT7_7apxAc_3o4xwcgl4odmh3Tn2gg1iXeaEyTov26VzHuKXqfw4vtPF5dzr51dpe21Hd1t6XmBjGv7fK-PLqnN6xkHfgvIo86ByO0ec0bo5IkwrHCNDDVk_DJQxOFBnYwCljBlvCHAT2gB9fnISU7q9Vd_iWQnFzucwoP72LqqO7O0GjPCKIRJRey"
     },
     {
-      "title": "Bloomberg Markets",
-      "url": "https://www.bloomberg.com/markets"
+      "title": "straitstimes.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGxTPVL_gsZxFY0w7lxJerUxUgAsXOUZWIEB4ed6yC_aWrZbt15IHRl0KivGMKvBAwFXQLlXEbjIiRHmpxo-7tdHbpdlk5rv5BlGqRZdYAOv4IDzmkSRpS5AG-fW217a1KIn6b6cSyDZ3QpA1uaH-kRfGsD0LenZ26i5ZnmRvCDVWrdasI8kSar3VXIX9gVHB049A59sFfZoUXOa2j7jw2Y4A=="
     },
     {
-      "title": "Reuters Legal",
-      "url": "https://www.reuters.com/legal/"
+      "title": "nhandan.vn",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGDy9IvpVaifUcsR71xlwB0gPNVQgavpdQnqysgVV49tSHNObIAPy8qUZMZ16bPFvIvoPfw0b9hzW04gM_lpyX_fkGuOOx_IL5e0VoXX_UwZLTraqtwq-C9dV6dcYZneupklsqFnx6vns_JqRt0E-bN86H1lan2pmpN"
     },
     {
-      "title": "Nature News",
-      "url": "https://www.nature.com/news"
+      "title": "euromaidanpress.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFQv_a6bBnjeuChjCV7G1GA1YX_2HVyfVwnFFaHLZtYXNsvePgFyPao6NDQ9bjg6LgEDzfkJ0a9r8S7EWbj2ocFBFpaK4tJ9B9B7o4uG4AkG5GcfBz_PzLRFsQPkUCndEGCTVAqYWCwI7jzc4ctdDC4yZleFQntK6BSywuOzg0J-sBDZ7KoCzVhflrwbCaorg8XViGIehComblzpHSptKisBw=="
     },
     {
-      "title": "Wall Street Journal",
-      "url": "https://www.wsj.com/"
+      "title": "united24media.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEBtQQzLtxW862GjS93felm6v2qeP_rA7O8_o5sBnIUheOML6rnB6r3hfGTa9r0c7vvkQHwow5r6_tiVB67fbqDmE-u0a1q50muHzaaO0epqssRmGhIsJBjuzih12gLZsg6VzDn4xz4z3ggLtyK2_qBKsuZr3WEHthU3hIRGDGM4PVJ4_usouYDfVXGJslyH-IfyRceYpxefszmfzGdaa4EaxL-KVBpuT_v"
     },
     {
-      "title": "UN News",
-      "url": "https://news.un.org/en/"
+      "title": "kyivindependent.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFjREFvn-drq0SFD3-mA-r-fU-EjtMGy1TAVfKif7XuP2bEGEHR8UON1OHn86_yokOVwLK6smSEbf37-kYNlGReZqt6ZOuggRD26pAffsBQhv7_WQ4wl25SNVqofhC5YTU7XZCVdkbqtkOBLm5lFA3-RUF7bZp58uK9pry91uSSisR7x7vW1jhYWxeiM0c7jM7fzYtW_vBp_6D2T-cc4VyOvC_S0C92"
     },
     {
-      "title": "Reuters Commodities",
-      "url": "https://www.reuters.com/markets/commodities/"
+      "title": "militarnyi.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQF3pnAZIJlH-NJn8zZ9rrYHKmKB-nn8g2vY7cGbMTcxrT9QAIYlw2GfVfB3Jr9CXKAC1oGRLFTAMalbpfF9CiNW1EI5tjDDRt9CjgttLylhOwwL8x2WBz8ZxkDDFNckW_Rmuaa6c1FLT2THhVFfqgr6vJdicb4nmugis0Pkznw1lYuy547pdmixJn8lVWbcec8E5zogS0dN4dI9TyA="
+    },
+    {
+      "title": "facebook.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGgYa7DEJqMMnD_n3pCEmL9diO6qdaQAlfhQn86-odUSpKN9395S25FHjfqvRViChsRA0iP9AyKrvlg4izcGp1ax-DLnbinQgyZ3hKN4Y-DNjkM1KSrdFqVhTcvU9_R08Zzpad3AkAR7dpsWvC7iceE_a1FdumT_aYv0k9WFyjQFVHb4C1RD3Fx44ZQH9ccJu2mSk3QIWVHQ_dU8lfhUvycbhGfcCZbJIQLW9pnLa2g00D-aELTk4UtT6eLtEoyfygaanBKbw=="
+    },
+    {
+      "title": "acleddata.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHTanDK6FkDmxFHiVVYbnl0tlmZezEYY1UHAuVwYejUUDish6qYG6Cs5WZ6vzVPM9r1pax2tGr7RrP2pRxO9ggQuCJf1-lMckvjFnFXKoV8vGAGSP18l-ZssM5OhMcCGDYhtVdR7V72UA0ZsE79FJ77fmytq0uLgBqoHn9uoFb07tEqWJ66voVo2SlWGA=="
+    },
+    {
+      "title": "semafor.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQE6ahhAQNCWfRcR4nezh0EJMH-B4OYqfMS-117ehh8a-YlRGPMJKMlVzR5tn6H8E1ztI5ZFrOfr0ZYFOqXfrKmEdA3MQcHgm9rY1WUOVVOaRxBID4nbfpGinuAWZh9zj7fXivVp9DdaXtCbPRF2o9A7LlGrrRXxyThhVFfphlB730MG5S4qDYHR1ZuW4Csz10hchHzW2gQTfw7OpBqqT_eLHU6slTRBhiw_"
+    },
+    {
+      "title": "triblive.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHrk75UNVRYTQNkhRFC8Mpdti5q5n4OQZjGKUWF5hyqDKko1QZcHJA8kSpXKV9xw-ttnewhYXStNUb2Ar3J00j5LYRA-oLVsO7McSzKbZ_dWnc1eT5jI-A9bEkUPEmITdZplXJ_0h0qFM828aoj6LepCPaw-NhOz5amzPoJzaqBJch-nXZT7Z4jBUEElAADLzhx4Z9AyDEglFhG"
+    },
+    {
+      "title": "democracynow.org",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFdV5INhnW0D7FAgjMc4rJAilB65yzb7rTNQJs4IfLmacioBnNoK0LaJ3zB6rWa6f78abfPkvRg6UwXgRCVOw1d8mnsh1mOhlXSzs-XQfePSExw3UEtZwsHh2PsQGb2e-NXTcTKLdp1YFrCPh21oCT4er2oJb46Lk7OuK58k8zhAI-MToEK5ayB-f9uNylXgVQz33tzzcPyEbWSR6Ot4YP5OJdD2XWDJTY867I8qs8zucw="
+    },
+    {
+      "title": "facebook.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFPoCyPpH8HfjYaenVhcS3KCi71lgS947ZwVHVw2D9GM4AmovyhlkJh_7fyHw7SbGsm9bt8X5CGTUFfG0RyoyLRPSDQA7_8J20hnCdHKo3oGH7k-QFncBFyUCg9mI7B6ae1AHK6HqvwBb_U1oiRJy76ajY4kZVwvCjNZ9Md3pw0p9LSJzUf6-FQSlEde5F5gbs-wFW_vsYs4aYDIQPsx7tfhCtWPT8oRHzEe8JPWeE8RXlH0i51e6twYFWJugtfyXUrm_vJ3V-g2nQ6GRtsKw=="
+    },
+    {
+      "title": "livemint.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFgK6l9K2IpbevnROj4w_dP1yQ2XUwqN6hYcFwvgm3Q_acwoleAnc7ip5mQxXN7tvEUdj26zJpxoeK8Sa-7-nrCguDHH9HFethjHGUDfAbD0Q17BYT9NR8qpPVptAiMzg44oXMvIpar_qqZbN83pEjU0HBkfC5HZtJOG0pV2xc8uNUysOEKJiKw2ClNYln-w6uDTBPbETWU5IRUeDu1-ODs7OH_sg=="
+    },
+    {
+      "title": "wsls.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHTXH-wVo6eCvz9RzFHDa8VY_9O46K_1_QhDTopuTZAku9Qy567Ppl0OOFcegW1qLCLASagGSpUslneAYhUVXH445icAjrkh0mmYhJEItRdLlMeco0J2aY3mYoVwQiimE0gSSKzPtfHeLbjzgKCWSPLnar4QmNzftuXZMd28UsYdk5bjDMPiSJt2nSWqGcvrIeN6hsIywK2h3bl4AYWF4TcKKeAuN1fYQtCywGqT04bDqEI-I8="
+    },
+    {
+      "title": "wtvbam.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQH1IcabigHX1msajsf3gd7D-b3PFrDJcPqfrsN_OaZFaCVm-OAzzGFGFyF39-xtpjkEySbKmVPODRwy_QYfW0qE3RtS4dynGmZnF8Hdc6ylCfbR16PNV6IvcSIFSkQlPkPdZ0YVglI-r4NLSxVK3K0ubS00b6yeEoxS3RCEsCI2mAbNz449KZbgbvsLj-0do30="
+    },
+    {
+      "title": "ksat.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFu49bMpSf2Piy28_QFb0SGP_7si8vVdnu7MgkY84Of7uS5bvpByLTmpRGUWS2iLsvy84iKyCiv7h8mGFayKBaL01hV9hQozEKYP1Y5hyANEd6dhXIPQSb8Qkm3Z7WTLujP7a3sX5_taQatQqi4FVhBNpxaqBmsCLLl24AjHjqOSqRB464sB5RQ0owMPgN9F1xL3POD24KDu2uSEEE89NDNocezbOr31fEGWqx7"
+    },
+    {
+      "title": "insurancejournal.com",
+      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQG04F2zCgmYwIesfHrWyfD-cyVzW3RkVTvgm9y1iVwhDzqiYgoF9y96_drOvvIr16Gi5yOwvwVVa1M1UQRQQpJZfLw-cp14l9Yge9_cKN92ks1wObYlcB1kxD1MDob2bkX30tjaESZpi4zEok9vWuLDNpYGn54UBxheC8I1JJA="
     }
   ],
-  "wordCount": 278,
-  "generatedAt": "2026-08-09T00:15:00.000Z",
-  "model": "sample-fixture"
+  "wordCount": 272,
+  "generatedAt": "2026-08-10T16:59:09.833Z",
+  "model": "gemini-3.5-flash"
 }
