@@ -236,6 +236,12 @@ h3 {
 .footer a:hover {
   color: var(--ink);
 }
+.footer a.footer__credit {
+  color: var(--accent);
+}
+.footer a.footer__credit:hover {
+  color: var(--ember);
+}
 
 /* --------------------------------------------------------------- buttons -- */
 .btn {
