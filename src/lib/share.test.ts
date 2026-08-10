@@ -10,9 +10,10 @@ const TIMER = cp(0x23f1, 0xfe0f);
 const DONE = cp(0x1f7e9);
 const MISS = cp(0x2b1c);
 const FIRE = cp(0x1f525);
+const PHONE = cp(0x1f4f1);
 
 describe('buildShareText', () => {
-  it('matches the emoji daily-game format', () => {
+  it('matches the emoji daily-game format (desktop)', () => {
     const text = buildShareText({
       gameNumber: 222,
       wpm: 86,
@@ -21,16 +22,47 @@ describe('buildShareText', () => {
       storiesCleared: 5,
       storyCount: 12,
       streak: 7,
+      device: 'desktop',
     });
     expect(text).toBe(
       [
         `${WOLF} Keywulf #222`,
-        `${KEYS} 86 WPM | ${TARGET} 98.7% | ${TIMER} 2:00`,
+        `${KEYS} 86 WPM (desktop) | ${TARGET} 98.7% | ${TIMER} 2:00`,
         `${DONE.repeat(5)}${MISS.repeat(7)} 5/12`,
         `${FIRE} Streak 7`,
         'keywulf.com',
       ].join('\n'),
     );
+  });
+
+  it('tags mobile runs with the phone emoji and word', () => {
+    const text = buildShareText({
+      gameNumber: 222,
+      wpm: 45,
+      accuracy: 0.944,
+      elapsedMs: 120000,
+      storiesCleared: 5,
+      storyCount: 12,
+      streak: 1,
+      device: 'mobile',
+    });
+    expect(text).toContain(`${PHONE} 45 WPM (mobile) |`);
+    expect(text).not.toContain(KEYS);
+  });
+
+  it('omits the device tag when unknown', () => {
+    const text = buildShareText({
+      gameNumber: 222,
+      wpm: 86,
+      accuracy: 0.987,
+      elapsedMs: 120000,
+      storiesCleared: 5,
+      storyCount: 12,
+      streak: 7,
+    });
+    expect(text).toContain(`${KEYS} 86 WPM | ${TARGET}`);
+    expect(text).not.toContain('(desktop)');
+    expect(text).not.toContain('(mobile)');
   });
 
   it('shows a full green bar for a cleared briefing', () => {

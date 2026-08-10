@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Challenge } from '../types';
 import type { RunResult } from './Play';
 import { formatAccuracyPct, formatDuration, formatWpm } from '../lib/scoring';
-import { buildShareText, shareOrCopy } from '../lib/share';
+import { buildShareText, shareOrCopy, detectDevice } from '../lib/share';
 import { ShareIcon, CheckIcon } from './icons';
 import { RunGraph } from './RunGraph';
 import { Sources } from './Sources';
@@ -44,6 +44,7 @@ export function Result({
         storyCount: result.storyCount,
         streak,
         practice,
+        device: detectDevice(),
       }),
     [challenge.gameNumber, result, streak, practice],
   );

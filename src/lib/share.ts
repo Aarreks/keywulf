@@ -14,19 +14,27 @@ export interface ShareData {
   storyCount: number;
   streak: number;
   practice?: boolean;
+  /** Where the run was typed; a phone WPM is a different feat. */
+  device?: 'mobile' | 'desktop';
 }
 
 // Emojis are built from code points so this source file stays pure ASCII.
 // (Share text is never typed by the player, so emoji are fine here.)
 const E = {
   wolf: String.fromCodePoint(0x1f43a), // wolf face
-  keys: String.fromCodePoint(0x2328, 0xfe0f), // keyboard
+  keys: String.fromCodePoint(0x2328, 0xfe0f), // keyboard (desktop runs)
+  phone: String.fromCodePoint(0x1f4f1), // mobile phone (mobile runs)
   target: String.fromCodePoint(0x1f3af), // direct hit (accuracy)
   timer: String.fromCodePoint(0x23f1, 0xfe0f), // stopwatch
   cleared: String.fromCodePoint(0x1f7e9), // green square (story cleared)
   missed: String.fromCodePoint(0x2b1c), // white square (story remaining)
   fire: String.fromCodePoint(0x1f525), // streak
 };
+
+/** Which kind of device this browser is, for the share text's device tag. */
+export function detectDevice(): 'mobile' | 'desktop' {
+  return isMobileLike() ? 'mobile' : 'desktop';
+}
 
 /**
  * Build the spoiler-free share text, Wordle-style, e.g.:
@@ -38,9 +46,11 @@ const E = {
  *   keywulf.com
  */
 export function buildShareText(data: ShareData): string {
+  const deviceEmoji = data.device === 'mobile' ? E.phone : E.keys;
+  const deviceTag = data.device ? ` (${data.device})` : '';
   const lines = [
     `${E.wolf} Keywulf #${data.gameNumber}${data.practice ? ' (practice)' : ''}`,
-    `${E.keys} ${formatWpm(data.wpm)} WPM | ${E.target} ${formatAccuracyPct(data.accuracy)}% | ${E.timer} ${formatDuration(data.elapsedMs)}`,
+    `${deviceEmoji} ${formatWpm(data.wpm)} WPM${deviceTag} | ${E.target} ${formatAccuracyPct(data.accuracy)}% | ${E.timer} ${formatDuration(data.elapsedMs)}`,
   ];
   if (data.storyCount > 0) {
     const done = Math.max(0, Math.min(data.storiesCleared, data.storyCount));
