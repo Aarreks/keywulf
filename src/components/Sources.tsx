@@ -1,8 +1,33 @@
-import type { Challenge } from '../types';
+import type { Challenge, ChallengeSource } from '../types';
 
 // Sources are exposed only AFTER a run, never inside the typed text. We show the
 // per-story sources when present; otherwise the labeled pool used to build the
 // briefing (grounding attribution can be imprecise, so we never fake mapping).
+//
+// The daily job resolves grounding redirects to real article titles where it
+// can; older briefings may only carry domains, so render both shapes cleanly.
+
+function domainOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function SourceLink({ src }: { src: ChallengeSource }) {
+  const domain = domainOf(src.url);
+  // Title is "just the domain" when enrichment could not find an article title
+  // (or for pre-enrichment briefings). In that case show the domain alone.
+  const bare =
+    src.title.replace(/^www\./, '').toLowerCase() === domain.toLowerCase() || src.title.trim() === '';
+  return (
+    <a href={src.url} target="_blank" rel="noopener noreferrer" className="source-item">
+      <span className="source-item__title">{bare ? domain : src.title}</span>
+      {!bare && domain && <span className="source-item__domain">{domain}</span>}
+    </a>
+  );
+}
 
 export function Sources({ challenge }: { challenge: Challenge }) {
   const anyPerStory = challenge.stories.some((s) => s.sources.length > 0);
@@ -14,16 +39,12 @@ export function Sources({ challenge }: { challenge: Challenge }) {
         <div style={{ display: 'grid', gap: 18 }}>
           {challenge.stories.map((s) => (
             <div key={s.rank} style={{ display: 'grid', gap: 8 }}>
-              <div style={{ fontWeight: 800 }}>
+              <div style={{ fontWeight: 700 }}>
                 {s.rank}. {s.headline}
               </div>
               <div className="sources">
                 {s.sources.length > 0 ? (
-                  s.sources.map((src, i) => (
-                    <a key={i} href={src.url} target="_blank" rel="noopener noreferrer">
-                      {src.title}
-                    </a>
-                  ))
+                  s.sources.map((src, i) => <SourceLink key={i} src={src} />)
                 ) : (
                   <span className="start__hint">No specific source retained.</span>
                 )}
@@ -39,11 +60,7 @@ export function Sources({ challenge }: { challenge: Challenge }) {
           </p>
           <div className="sources">
             {challenge.sourcePool.length > 0 ? (
-              challenge.sourcePool.map((src, i) => (
-                <a key={i} href={src.url} target="_blank" rel="noopener noreferrer">
-                  {src.title}
-                </a>
-              ))
+              challenge.sourcePool.map((src, i) => <SourceLink key={i} src={src} />)
             ) : (
               <span className="start__hint">No sources were retained for this briefing.</span>
             )}

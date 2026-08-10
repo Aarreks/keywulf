@@ -266,12 +266,20 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // Build the telemetry point string from the rolling window.
+  // Build the telemetry point string from the rolling window. Coordinates are
+  // computed in PIXEL space with the viewBox matched to the element's real
+  // size, so strokes stay uniform and round on every screen (a stretched unit
+  // viewBox turned the trace into a chisel-tip line).
   const renderTelemetry = useCallback(() => {
     const samples = teleRef.current;
     const line = teleLineRef.current;
     const area = teleAreaRef.current;
     if (!line || !area) return;
+    const svg = line.ownerSVGElement;
+    if (!svg) return;
+    const w = svg.clientWidth || 600;
+    const h = svg.clientHeight || 66;
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
     if (samples.length < 2) {
       line.setAttribute('points', '');
       area.setAttribute('points', '');
@@ -284,12 +292,12 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     const n = view.length;
     const pts: string[] = [];
     for (let k = 0; k < n; k++) {
-      const x = (k / (n - 1)) * 100;
-      const y = 100 - Math.max(0, Math.min(1, view[k].wpm / maxWpm)) * 100;
-      pts.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+      const x = (k / (n - 1)) * w;
+      const y = h - Math.max(0, Math.min(1, view[k].wpm / maxWpm)) * (h - 4) - 2;
+      pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
     }
     line.setAttribute('points', pts.join(' '));
-    area.setAttribute('points', `0,100 ${pts.join(' ')} 100,100`);
+    area.setAttribute('points', `0,${h} ${pts.join(' ')} ${w},${h}`);
   }, []);
 
   // Main animation loop: energy/caret glow, HUD, telemetry, snapshots.
@@ -486,7 +494,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
 
       {settings.showGraph && (
         <div className="telemetry" aria-hidden="true">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <svg preserveAspectRatio="none">
             <polygon ref={teleAreaRef} className="telemetry__area" points="" />
             <polyline ref={teleLineRef} className="telemetry__line" points="" />
           </svg>

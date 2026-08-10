@@ -26,6 +26,7 @@ import { assembleChallenge, type RawSource, type RawStory } from './buildChallen
 import { validateChallenge } from './challengeSchema';
 import { todayUtc } from '../src/lib/gameNumber';
 import { SYSTEM_INSTRUCTION, researchPrompt, formatPrompt } from './prompts';
+import { enrichSources } from './enrichSources';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -141,7 +142,17 @@ async function research(ai: GoogleGenAI): Promise<{ notes: string; sources: RawS
 
 async function main(): Promise<void> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
-  const { notes, sources } = await research(ai);
+  const { notes, sources: rawSources } = await research(ai);
+
+  // Grounding gives opaque redirect URLs titled only with a domain. Resolve
+  // them (server-side, once per day) to real article URLs + real titles so the
+  // Sources panel is readable. Every failure falls back gracefully.
+  console.log(`Resolving ${rawSources.length} grounding sources to article titles...`);
+  const sources = await enrichSources(
+    rawSources.map((s) => ({ title: String(s.title ?? s.url), url: String(s.url) })),
+  );
+  const enrichedCount = sources.filter((s, i) => s.title !== rawSources[i]?.title).length;
+  console.log(`Sources resolved: ${enrichedCount}/${sources.length} gained article titles.`);
 
   let feedback: string | undefined;
   const errors: string[] = [];

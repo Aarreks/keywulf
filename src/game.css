@@ -275,27 +275,15 @@
   height: 96px;
   opacity: 1;
 }
-/* Keep strokes crisp: the viewBox is stretched non-uniformly, so let stroke
-   widths be computed in screen pixels instead of scaling with the distortion. */
-.telemetry__line,
-.telemetry__grid,
-.telemetry__avg {
-  vector-effect: non-scaling-stroke;
-}
 .telemetry__avg {
   stroke: var(--faint);
   stroke-width: 1;
-  stroke-dasharray: 0.6 0.9;
+  stroke-dasharray: 3 4;
 }
 .telemetry__dot {
-  position: absolute;
-  right: -3px;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 1.5px solid var(--bg);
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 1.5;
 }
 .telemetry__avg-label {
   position: absolute;
@@ -662,9 +650,30 @@
   padding-bottom: 8px;
   display: block;
   word-break: break-word;
+  text-decoration: none;
 }
-.sources a:hover {
+.sources a:hover .source-item__title {
   color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.source-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: space-between;
+}
+.source-item__title {
+  font-family: var(--font-serif);
+  min-width: 0;
+}
+.source-item__domain {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex: none;
 }
 
 .errbox {
