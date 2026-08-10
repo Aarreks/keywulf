@@ -44,6 +44,13 @@ export interface Score {
 export const CHARS_PER_WORD = 5;
 
 /**
+ * Hard cap on a daily run. The game ends when the briefing is fully typed OR
+ * this much time elapses, whichever comes first. Keeps the daily ritual tight:
+ * the score is WPM/accuracy/how-far-you-got, not endurance.
+ */
+export const TIME_LIMIT_MS = 120_000;
+
+/**
  * Compute the canonical score for a run. Uses double-precision throughout with
  * no intermediate rounding; formatting/rounding is a display concern.
  */

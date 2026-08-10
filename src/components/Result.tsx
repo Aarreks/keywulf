@@ -40,6 +40,7 @@ export function Result({
         wpm: result.wpm,
         accuracy: result.accuracy,
         elapsedMs: result.elapsedMs,
+        storiesCleared: result.storiesCleared,
         storyCount: result.storyCount,
         streak,
         practice,
@@ -62,7 +63,11 @@ export function Result({
           <i />
         </div>
         <div className="result__label">
-          {practice ? 'Practice run' : `Keywulf #${challenge.gameNumber} complete`}
+          {practice
+            ? 'Practice run'
+            : result.timedOut
+              ? `Keywulf #${challenge.gameNumber} - time`
+              : `Keywulf #${challenge.gameNumber} - briefing cleared`}
         </div>
         <div className="result__wpm tnum">
           {formatWpm(result.wpm)}
@@ -80,7 +85,7 @@ export function Result({
         <Cell label="Accuracy" value={`${formatAccuracyPct(result.accuracy)}%`} good />
         <Cell label="Time" value={formatDuration(result.elapsedMs)} />
         <Cell label="Errors" value={String(result.errors)} />
-        <Cell label="Stories" value={String(result.storyCount)} />
+        <Cell label="Stories" value={`${result.storiesCleared}/${result.storyCount}`} />
         <Cell label={practice ? 'Streak (unchanged)' : 'Current streak'} value={String(streak)} />
         <Cell label="Longest streak" value={String(longest)} />
         <Cell label="Best WPM" value={String(bestWpm)} />

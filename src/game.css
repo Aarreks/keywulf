@@ -21,10 +21,11 @@
   color: var(--accent);
 }
 .start__tag {
-  font-size: clamp(17px, 2.4vw, 22px);
+  font-size: clamp(16px, 2.3vw, 21px);
   color: var(--ink-2);
-  font-weight: 700;
-  max-width: 34ch;
+  font-style: italic;
+  font-weight: 400;
+  max-width: 40ch;
 }
 .start__meta {
   display: flex;
@@ -72,17 +73,20 @@
   gap: 2px;
 }
 .stat__val {
-  font-size: clamp(22px, 3.4vw, 30px);
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  font-size: clamp(20px, 3.2vw, 28px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: 1;
 }
 .stat__val--accent {
   color: var(--accent);
 }
+.stat__val--urgent {
+  color: var(--bad);
+}
 .stat__label {
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  font-size: 10px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 700;
@@ -98,8 +102,8 @@
 .passage {
   position: relative;
   border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--panel), var(--panel-2));
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 2px solid var(--ink);
   box-shadow: var(--shadow);
   overflow: hidden;
   cursor: text;
@@ -107,14 +111,14 @@
      and the flowing text (child) can read it. Custom properties inherit down,
      so defining --passage-lh on the child would leave the viewport unable to
      size its window. */
-  --passage-fs: clamp(20px, 3.1vw, 30px);
-  --passage-lh: calc(var(--passage-fs) * 1.85);
+  --passage-fs: clamp(19px, 2.9vw, 27px);
+  --passage-lh: calc(var(--passage-fs) * 1.8);
 }
 :root[data-fontsize='small'] .passage {
-  --passage-fs: clamp(17px, 2.5vw, 24px);
+  --passage-fs: clamp(16px, 2.4vw, 22px);
 }
 :root[data-fontsize='large'] .passage {
-  --passage-fs: clamp(23px, 3.8vw, 36px);
+  --passage-fs: clamp(22px, 3.6vw, 33px);
 }
 /* Thin animated top keyline whose glow tracks energy. */
 .passage::before {
@@ -135,10 +139,12 @@
   mask-image: linear-gradient(180deg, transparent, #000 12%, #000 78%, transparent);
 }
 .passage__flow {
+  /* The passage is set in typewriter monospace: the text you strike, on the
+     page. Serif everywhere else keeps the editorial voice. */
+  font-family: var(--font-mono);
   font-size: var(--passage-fs);
   line-height: var(--passage-lh);
-  font-weight: 500;
-  letter-spacing: 0.005em;
+  font-weight: 400;
   color: var(--upcoming);
   position: relative;
   transition: transform var(--dur) var(--ease);
@@ -272,7 +278,8 @@
   align-items: center;
   gap: 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   min-height: 20px;
 }
 .storytag__rule {
@@ -315,16 +322,17 @@
   text-align: center;
 }
 .result__label {
+  font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted);
-  font-weight: 800;
+  font-weight: 700;
 }
 .result__wpm {
-  font-size: clamp(84px, 20vw, 168px);
-  font-weight: 900;
-  letter-spacing: -0.05em;
+  font-size: clamp(76px, 17vw, 148px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
   line-height: 0.9;
   color: var(--accent);
 }
@@ -372,9 +380,9 @@
 .statgrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
+  gap: 1.5px;
+  background: var(--line-strong);
+  border: 2px solid var(--ink);
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -385,13 +393,13 @@
   gap: 4px;
 }
 .cell__val {
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .cell__label {
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 700;

@@ -8,6 +8,9 @@ export interface ShareData {
   wpm: number;
   accuracy: number; // [0,1]
   elapsedMs: number;
+  /** Stories fully typed before the run ended. */
+  storiesCleared: number;
+  /** Total stories in the day's briefing. */
   storyCount: number;
   streak: number;
   practice?: boolean;
@@ -18,7 +21,7 @@ export interface ShareData {
  *
  *   Keywulf #221
  *   86 WPM | 98.7%
- *   3:54 | 12 stories
+ *   9/14 stories in 2:00
  *   Streak 7
  *   keywulf.com
  */
@@ -26,7 +29,7 @@ export function buildShareText(data: ShareData): string {
   const lines = [
     `Keywulf #${data.gameNumber}${data.practice ? ' (practice)' : ''}`,
     `${formatWpm(data.wpm)} WPM | ${formatAccuracyPct(data.accuracy)}%`,
-    `${formatDuration(data.elapsedMs)} | ${data.storyCount} ${data.storyCount === 1 ? 'story' : 'stories'}`,
+    `${data.storiesCleared}/${data.storyCount} stories in ${formatDuration(data.elapsedMs)}`,
   ];
   if (!data.practice) lines.push(`Streak ${data.streak}`);
   lines.push('keywulf.com');

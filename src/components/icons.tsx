@@ -1,29 +1,48 @@
 // Small inline SVG icons + the Keywulf mark. No icon library; these are tiny
 // and inherit currentColor.
 
-export function Mark({ size = 30 }: { size?: number }) {
+// The Keywulf mark: two round typewriter keys, "K" and "W", set at slightly
+// different heights like keys on a typebar basket.
+export function Mark({ size = 34 }: { size?: number }) {
   return (
     <svg
-      width={size}
+      width={(size * 60) / 40}
       height={size}
-      viewBox="0 0 64 64"
+      viewBox="0 0 60 40"
       className="brand__mark"
       aria-hidden="true"
       focusable="false"
     >
-      <rect width="64" height="64" rx="14" fill="var(--panel)" stroke="var(--line)" />
-      <g
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="4.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      >
-        <path d="M16 44 L16 24 L26 34" />
-        <path d="M48 44 L48 24 L38 34" />
-        <path d="M26 34 L32 40 L38 34" />
+      <g>
+        {/* K key (slightly raised) */}
+        <circle cx="16" cy="17" r="14" fill="var(--ink)" />
+        <circle cx="16" cy="17" r="11.4" fill="none" stroke="var(--bg)" strokeWidth="1.4" />
+        <text
+          x="16"
+          y="22"
+          textAnchor="middle"
+          fontFamily="'Courier Prime', 'Courier New', monospace"
+          fontWeight="700"
+          fontSize="13"
+          fill="var(--bg)"
+        >
+          K
+        </text>
+        {/* W key (slightly lowered, overlapping like a struck pair) */}
+        <circle cx="42" cy="23" r="14" fill="var(--ember)" />
+        <circle cx="42" cy="23" r="11.4" fill="none" stroke="var(--bg)" strokeWidth="1.4" />
+        <text
+          x="42"
+          y="28"
+          textAnchor="middle"
+          fontFamily="'Courier Prime', 'Courier New', monospace"
+          fontWeight="700"
+          fontSize="13"
+          fill="#fbf8f0"
+        >
+          W
+        </text>
       </g>
-      <circle cx="32" cy="49" r="2.4" fill="var(--accent)" />
     </svg>
   );
 }

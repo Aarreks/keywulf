@@ -27,8 +27,10 @@ function result(date: string, wpm: number, accuracy = 0.98): OfficialResult {
     gameNumber: gameNumberForDate(date),
     wpm,
     accuracy,
-    elapsedMs: 200000,
+    elapsedMs: 120000,
     errors: 3,
+    storiesCleared: 9,
+    storyCount: 14,
     completedAt: '2026-08-09T00:20:00.000Z',
   };
 }

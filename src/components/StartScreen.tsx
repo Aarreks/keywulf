@@ -10,19 +10,18 @@ interface Props {
 }
 
 export function StartScreen({ challenge, isToday, resumable, onStart, onResume }: Props) {
-  const minutes = Math.max(1, Math.round(challenge.wordCount / 45));
   return (
     <div className="start enter">
       <div className="start__head">
         <span className="pill">
           <span className="pill__dot" />
-          Keywulf #{challenge.gameNumber}
+          No. {challenge.gameNumber}
         </span>
         <h1 className="start__title">
           Type the <b>world</b>.
         </h1>
         <p className="start__tag">
-          Today's most important news, deduplicated and ranked, as one shared typing run.
+          The day's news, in two minutes of typing. Same briefing for everyone, everywhere.
         </p>
       </div>
 
@@ -37,7 +36,7 @@ export function StartScreen({ challenge, isToday, resumable, onStart, onResume }
           <span className="tnum">{challenge.wordCount}</span> words
         </span>
         <span>&middot;</span>
-        <span>~{minutes} min</span>
+        <span>2:00 on the clock</span>
       </div>
 
       {!isToday && (
@@ -65,8 +64,8 @@ export function StartScreen({ challenge, isToday, resumable, onStart, onResume }
       </div>
 
       <p className="start__hint">
-        Type the headlines and stories in order. The timer starts when you begin. Most important
-        stories come first. Progress is saved in this browser only.
+        Type the briefing in order, most important first. The clock starts on your first keystroke
+        and stops at 2:00 - or sooner, if you clear the lot. Progress is saved in this browser only.
       </p>
     </div>
   );

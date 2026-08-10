@@ -3,7 +3,9 @@
 // configured. It is NOT real reporting. Source links point to publisher home
 // sections (real, valid URLs) rather than fabricated article links.
 //
-// The real daily job overwrites public/data/today.json with grounded output.
+// Voice: terse wire-service headlines, one short sentence each, with a dry
+// aside only where one arises naturally. The real daily job overwrites
+// public/data/today.json with grounded output in the same voice.
 
 import type { RawStory } from './buildChallenge';
 
@@ -12,10 +14,10 @@ export const SAMPLE_MODEL = 'sample-fixture';
 
 export const sampleStories: RawStory[] = [
   {
-    headline: 'Ceasefire talks resume as border shelling continues',
-    body: 'Negotiators from both governments returned to talks aimed at halting weeks of cross-border fighting. Mediators said a partial truce could take effect within days, though shelling near contested towns continued overnight. Aid agencies warned that thousands of families have been displaced and are running short of food and clean water.',
+    headline: 'Ceasefire talks resume as shelling continues',
+    body: 'Negotiators returned to the table while artillery kept making its own statement along the border.',
     category: 'Conflict',
-    regions: ['Europe', 'Global'],
+    regions: ['Europe'],
     importance: 97,
     sources: [
       { title: 'Reuters World', url: 'https://www.reuters.com/world/' },
@@ -23,10 +25,10 @@ export const sampleStories: RawStory[] = [
     ],
   },
   {
-    headline: 'Central banks signal a pause as inflation cools',
-    body: 'Several major central banks indicated they may hold interest rates steady after new data showed price growth easing toward target. Markets rallied on hopes that borrowing costs have peaked, but officials warned the path back to stable prices remains uncertain. Policymakers stressed that future decisions would depend on incoming employment and wage figures.',
+    headline: 'Major central banks signal a pause on rates',
+    body: 'Officials hinted borrowing costs may have peaked, then spent several paragraphs refusing to promise anything.',
     category: 'Economy',
-    regions: ['United States', 'Europe'],
+    regions: ['Global'],
     importance: 92,
     sources: [
       { title: 'Reuters Markets', url: 'https://www.reuters.com/markets/' },
@@ -34,8 +36,8 @@ export const sampleStories: RawStory[] = [
     ],
   },
   {
-    headline: 'Powerful storm forces mass evacuations along the coast',
-    body: 'Authorities ordered hundreds of thousands of residents to leave low-lying areas as a major storm approached, bringing damaging winds and the risk of severe flooding. Emergency crews pre-positioned rescue teams while airlines cancelled hundreds of flights. Forecasters said the system could stall over the coast, prolonging heavy rainfall for days.',
+    headline: 'Coastal storm forces mass evacuations',
+    body: 'Hundreds of thousands were ordered inland as forecasters warned the system could stall over the coast for days.',
     category: 'Disaster',
     regions: ['Asia'],
     importance: 88,
@@ -46,77 +48,92 @@ export const sampleStories: RawStory[] = [
   },
   {
     headline: 'Parliament passes sweeping data privacy law',
-    body: 'Lawmakers approved rules that tighten how companies collect and share personal data, with large fines for violations. Industry groups warned of compliance costs while privacy advocates called it a landmark step.',
+    body: 'Companies face large fines for misusing personal data, a practice previously known as the business model.',
     category: 'Policy',
     regions: ['Europe'],
     importance: 80,
-    sources: [{ title: 'Politico', url: 'https://www.politico.eu/' }],
+    sources: [{ title: 'Politico Europe', url: 'https://www.politico.eu/' }],
   },
   {
-    headline: 'Health officials track a new respiratory outbreak',
-    body: 'Public health agencies reported a cluster of respiratory illnesses under investigation and urged basic precautions. Officials said there was no evidence yet of widespread transmission.',
+    headline: 'Health agencies track new respiratory outbreak',
+    body: 'Officials urged basic precautions and said there is no evidence yet of wide transmission.',
     category: 'Health',
-    regions: ['Africa', 'Global'],
+    regions: ['Africa'],
     importance: 76,
     sources: [
       { title: 'World Health Organization', url: 'https://www.who.int/news' },
-      { title: 'Reuters Health', url: 'https://www.reuters.com/business/healthcare-pharmaceuticals/' },
     ],
   },
   {
-    headline: 'Chipmaker unveils faster, more efficient processors',
-    body: 'A leading semiconductor firm announced a new generation of chips it says are significantly more power efficient. Analysts expect the technology to reshape competition in data centers and consumer devices.',
+    headline: 'Chipmaker unveils faster, cooler processors',
+    body: 'The new chips promise more power for less electricity, which data centers currently consume like a midsize country.',
     category: 'Technology',
-    regions: ['United States', 'Asia'],
+    regions: ['Asia', 'United States'],
     importance: 71,
     sources: [{ title: 'Reuters Technology', url: 'https://www.reuters.com/technology/' }],
   },
   {
     headline: 'Coalition government sworn in after long deadlock',
-    body: 'A new coalition took office following months of political gridlock, pledging to focus on the cost of living. The fragile alliance faces early tests over the budget.',
+    body: 'The new alliance pledged unity, effective immediately, budget negotiations permitting.',
     category: 'Politics',
     regions: ['Europe'],
     importance: 66,
     sources: [{ title: 'The Guardian', url: 'https://www.theguardian.com/world' }],
   },
   {
-    headline: 'Oil prices slip as supply concerns ease',
-    body: 'Crude prices fell after producers signaled steady output and demand forecasts softened. The move offered relief to importers grappling with high energy costs.',
+    headline: 'Oil prices slip as supply fears ease',
+    body: 'Producers signaled steady output, giving importers a rare quiet week.',
     category: 'Markets',
-    regions: ['Middle East', 'Global'],
+    regions: ['Middle East'],
     importance: 61,
-    sources: [{ title: 'Bloomberg', url: 'https://www.bloomberg.com/markets' }],
+    sources: [{ title: 'Bloomberg Markets', url: 'https://www.bloomberg.com/markets' }],
   },
   {
-    headline: 'Court upholds landmark climate ruling',
-    body: 'An appeals court affirmed a decision requiring the government to strengthen emissions targets. Campaigners hailed the outcome as a precedent for climate litigation.',
+    headline: 'Appeals court upholds landmark climate ruling',
+    body: 'The government must strengthen emissions targets after arguing, unsuccessfully, that it was trying.',
     category: 'Climate',
     regions: ['Global'],
     importance: 57,
     sources: [{ title: 'Reuters Legal', url: 'https://www.reuters.com/legal/' }],
   },
   {
-    headline: 'Scientists report progress on a promising vaccine',
-    body: 'Researchers published encouraging early results from a trial of a new vaccine candidate. Larger studies are needed before any approval.',
+    headline: 'Early trial results promising for new vaccine',
+    body: 'Researchers reported encouraging data and the customary reminder that larger studies are needed.',
     category: 'Science',
     regions: ['Global'],
     importance: 52,
-    sources: [{ title: 'Nature', url: 'https://www.nature.com/news' }],
+    sources: [{ title: 'Nature News', url: 'https://www.nature.com/news' }],
   },
   {
-    headline: 'Regulators approve a major cross-border merger',
-    body: 'Antitrust authorities cleared a large corporate merger with conditions intended to protect competition. The deal reshapes one of the largest players in the industry.',
+    headline: 'Regulators clear major cross-border merger',
+    body: 'The deal was approved with conditions meant to protect competition from the people buying it.',
     category: 'Business',
     regions: ['United States', 'Europe'],
     importance: 47,
     sources: [{ title: 'Wall Street Journal', url: 'https://www.wsj.com/' }],
   },
   {
-    headline: 'Aid convoys reach a region cut off by floods',
-    body: 'Relief teams delivered the first supplies to communities isolated by recent flooding. Officials warned that access remains difficult.',
+    headline: 'Aid convoys reach flood-isolated region',
+    body: 'The first relief supplies arrived after a week of impassable roads.',
     category: 'Humanitarian',
     regions: ['Asia'],
     importance: 42,
     sources: [{ title: 'UN News', url: 'https://news.un.org/en/' }],
+  },
+  {
+    headline: 'Drought pushes grain prices to seasonal high',
+    body: 'A dry planting season has traders and bakers watching the same forecasts.',
+    category: 'Food',
+    regions: ['Africa', 'Global'],
+    importance: 38,
+    sources: [{ title: 'Reuters Commodities', url: 'https://www.reuters.com/markets/commodities/' }],
+  },
+  {
+    headline: 'Astronomers spot largest known comet fragment',
+    body: 'The object poses no threat to Earth, astronomers said, sounding slightly disappointed.',
+    category: 'Science',
+    regions: ['Global'],
+    importance: 33,
+    sources: [{ title: 'Nature News', url: 'https://www.nature.com/news' }],
   },
 ];

@@ -39,6 +39,10 @@ export interface OfficialResult {
   accuracy: number; // [0,1]
   elapsedMs: number;
   errors: number;
+  /** Stories fully typed before the run ended (2-minute cap). */
+  storiesCleared: number;
+  /** Total stories in that day's briefing. */
+  storyCount: number;
   completedAt: string; // ISO timestamp
 }
 
@@ -140,6 +144,9 @@ function coerceResult(date: string, val: unknown): OfficialResult | null {
     accuracy: Math.max(0, Math.min(1, num(v.accuracy))),
     elapsedMs: num(v.elapsedMs),
     errors: num(v.errors),
+    // Fields added with the 2-minute format; older blobs default to 0.
+    storiesCleared: num(v.storiesCleared),
+    storyCount: num(v.storyCount),
     completedAt: typeof v.completedAt === 'string' ? v.completedAt : new Date().toISOString(),
   };
 }

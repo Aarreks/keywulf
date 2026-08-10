@@ -7,15 +7,15 @@ import type { Challenge } from '../src/types';
 import { isTypeableSafe, findUnsafeChars, countWords } from '../src/lib/sanitize';
 import { gameNumberForDate } from '../src/lib/gameNumber';
 
-// Tunable bounds. Targets come from the product spec (10-14 stories,
-// ~450-650 typeable words) with modest tolerance so a good generation is not
-// rejected on a borderline count.
-export const MIN_STORIES = 10;
-export const MAX_STORIES = 14;
-export const MIN_WORDS = 420;
-export const MAX_WORDS = 700;
-export const MAX_HEADLINE_CHARS = 120;
-export const MAX_BODY_CHARS = 400;
+// Tunable bounds. The game is capped at 2 minutes, so the briefing is broad and
+// terse: 12-16 headlines, each with ONE short sentence, ~150-300 total words.
+// Fast typists can just about clear it; everyone else gets as far as they get.
+export const MIN_STORIES = 12;
+export const MAX_STORIES = 16;
+export const MIN_WORDS = 150;
+export const MAX_WORDS = 300;
+export const MAX_HEADLINE_CHARS = 90;
+export const MAX_BODY_CHARS = 160;
 
 const sourceSchema = z.object({
   title: z.string().min(1).max(200),

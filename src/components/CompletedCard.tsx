@@ -21,11 +21,11 @@ export function CompletedCard({ challenge, result, streak, onViewResult, onPract
         <CheckIcon /> Today's Keywulf complete
       </div>
       <h1 className="start__title" style={{ fontSize: 'clamp(32px, 6vw, 60px)' }}>
-        Keywulf #{challenge.gameNumber}
+        Keywulf No. {challenge.gameNumber}
       </h1>
       <p className="start__hint">{formatLongDate(challenge.date)}</p>
 
-      <div className="statgrid tnum" style={{ maxWidth: 520 }}>
+      <div className="statgrid tnum" style={{ maxWidth: 560 }}>
         <div className="cell">
           <div className="cell__val cell__val--good">{result.wpm}</div>
           <div className="cell__label">WPM</div>
@@ -35,8 +35,10 @@ export function CompletedCard({ challenge, result, streak, onViewResult, onPract
           <div className="cell__label">Accuracy</div>
         </div>
         <div className="cell">
-          <div className="cell__val">{formatDuration(result.elapsedMs)}</div>
-          <div className="cell__label">Time</div>
+          <div className="cell__val">
+            {result.storyCount > 0 ? `${result.storiesCleared}/${result.storyCount}` : formatDuration(result.elapsedMs)}
+          </div>
+          <div className="cell__label">{result.storyCount > 0 ? 'Stories' : 'Time'}</div>
         </div>
         <div className="cell">
           <div className="cell__val">{streak}</div>

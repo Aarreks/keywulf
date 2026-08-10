@@ -7,15 +7,17 @@ export function AboutView() {
       <div className="prose">
         <p>
           Keywulf is a once-per-day typing game built from the world's most important news. Everyone
-          on Earth gets the same briefing, in the same order, on the same UTC day.
+          on Earth gets the same briefing, in the same order, on the same UTC day. You have two
+          minutes; you type as much of the world as you can.
         </p>
 
         <h2>How the daily briefing is made</h2>
         <ul>
-          <li>Once per day, an automated job researches major news from roughly the last 24-30 hours using current web search.</li>
+          <li>Once per day, an automated job researches the most recent major news - the last 24 hours or newer - using current web search.</li>
           <li>AI merges different articles that cover the same event, so 20 write-ups of one story count as one story.</li>
           <li>Stories are ordered by broad global significance - people affected, geopolitical and economic consequence, safety, elections, disasters, health, science, and climate - not by social-media attention or US media volume.</li>
-          <li>The result is a compact briefing of roughly 10-14 stories and 450-650 words.</li>
+          <li>The result is a terse briefing of roughly 12-16 headlines, each with a single sentence: wire-service compression, with the occasional dry aside.</li>
+          <li>The clock stops at 2:00, or earlier if you clear the whole briefing.</li>
           <li>The sources used are exposed after you finish, never inside the text you type.</li>
         </ul>
 

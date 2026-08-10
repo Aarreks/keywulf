@@ -12,72 +12,76 @@
 :root {
   color-scheme: light dark;
 
-  /* Type */
-  --font-sans: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  /* Type: bookish English serif for prose/masthead; typewriter mono for the
+     passage, numerals, and labels. */
+  --font-serif: 'Libre Baskerville', 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+  --font-mono: 'Courier Prime', 'Courier New', ui-monospace, 'Cascadia Mono', monospace;
 
   /* Live performance signal (updated imperatively during play). */
   --energy: 0;
 
-  /* Accent derived from energy: cool slate when quiet -> ember when firing.
+  /* Accent: a printer's red. It does not hue-shift into neon; instead it goes
+     from a muted brick (quiet) to a vivid vermilion (strong, accurate typing).
      Because --energy is smoothed, the color drifts rather than flashes. */
-  --accent-h: calc(212 - (212 - 20) * var(--energy));
-  --accent-s: calc((26 + 62 * var(--energy)) * 1%);
-  --accent-l: calc((52 + 6 * var(--energy)) * 1%);
+  --accent-h: 6;
+  --accent-s: calc((34 + 46 * var(--energy)) * 1%);
+  --accent-l: calc((44 + 5 * var(--energy)) * 1%);
   --accent: hsl(var(--accent-h) var(--accent-s) var(--accent-l));
-  --accent-soft: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.16);
-  --accent-line: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.42);
+  --accent-soft: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.12);
+  --accent-line: hsl(var(--accent-h) var(--accent-s) var(--accent-l) / 0.5);
 
-  /* Fixed brand ember (independent of energy) for static brand elements. */
-  --ember: #ff7a3c;
-  --ember-deep: #e0452f;
+  /* Fixed brand red (independent of energy) for static brand elements. */
+  --ember: #b3271f;
+  --ember-deep: #8f1c16;
 
   /* Motion */
-  --dur-fast: 90ms;
-  --dur: 180ms;
-  --dur-slow: 420ms;
+  --dur-fast: 80ms;
+  --dur: 150ms;
+  --dur-slow: 360ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
-  --radius: 12px;
-  --radius-sm: 8px;
+  /* Brutalist: hard, near-square corners. */
+  --radius: 3px;
+  --radius-sm: 2px;
   --maxw: 940px;
 }
 
-/* ---- Dark theme (default look) ---- */
+/* ---- Dark theme: ink-on-charcoal broadsheet ---- */
 :root[data-theme='dark'] {
-  --bg: #0c0d11;
-  --bg-2: #101218;
-  --panel: #14161d;
-  --panel-2: #191c25;
-  --ink: #f2f0ea;
-  --ink-2: #c7cad3;
-  --muted: #8b909c;
-  --faint: #565b68;
-  --line: #23262f;
-  --line-strong: #313643;
-  --good: #79d19b;
-  --bad: #ff6b6b;
-  --bad-bg: rgba(255, 107, 107, 0.14);
-  --shadow: 0 20px 60px -30px rgba(0, 0, 0, 0.8);
-  --upcoming: #6b7180;
+  --bg: #14130f;
+  --bg-2: #100f0c;
+  --panel: #1a1813;
+  --panel-2: #201d17;
+  --ink: #efe9dc;
+  --ink-2: #cbc4b4;
+  --muted: #948d7d;
+  --faint: #5f5a4e;
+  --line: #3a3529;
+  --line-strong: #6a6350;
+  --good: #8fc59a;
+  --bad: #e8776a;
+  --bad-bg: rgba(232, 119, 106, 0.16);
+  --shadow: 4px 4px 0 #000;
+  --upcoming: #6c6656;
 }
 
-/* ---- Light theme (warm paper, not just inverted) ---- */
+/* ---- Light theme: newsprint (warm off-white paper, black ink) ---- */
 :root[data-theme='light'] {
-  --bg: #f4f1ea;
-  --bg-2: #efeade;
-  --panel: #fbf9f4;
-  --panel-2: #f3efe6;
-  --ink: #191713;
-  --ink-2: #3c3a34;
-  --muted: #6d6a61;
-  --faint: #a49f93;
-  --line: #e2dccf;
-  --line-strong: #d2caba;
-  --good: #2f8f5b;
-  --bad: #cc3d3d;
-  --bad-bg: rgba(204, 61, 61, 0.1);
-  --shadow: 0 24px 60px -34px rgba(60, 50, 30, 0.35);
-  --upcoming: #b6b0a2;
+  --bg: #f3efe4;
+  --bg-2: #ebe6d8;
+  --panel: #fbf8f0;
+  --panel-2: #f1ece0;
+  --ink: #14120d;
+  --ink-2: #38342b;
+  --muted: #6a6558;
+  --faint: #a39d8c;
+  --line: #ccc4b0;
+  --line-strong: #1a1712;
+  --good: #2c7a4a;
+  --bad: #b3271f;
+  --bad-bg: rgba(179, 39, 31, 0.09);
+  --shadow: 4px 4px 0 var(--ink);
+  --upcoming: #b3ab97;
 }
 
 * {
@@ -94,53 +98,62 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-sans);
+  font-family: var(--font-serif);
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  line-height: 1.5;
+  line-height: 1.55;
   overflow-x: hidden;
 }
 
-/* Ambient background: two faint radial washes whose warmth tracks energy.
-   Fixed to the viewport, purely decorative, GPU-cheap. */
+/* Ambient background: a single very faint ink wash at the top edge whose
+   presence tracks energy. Newsprint, not neon: kept subtle on purpose. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(
-      60% 50% at 50% -8%,
-      hsl(var(--accent-h) var(--accent-s) 50% / calc(0.1 + 0.18 * var(--energy))),
-      transparent 70%
-    ),
-    radial-gradient(50% 40% at 90% 110%, var(--accent-soft), transparent 70%);
+  background: radial-gradient(
+    70% 40% at 50% -12%,
+    hsl(var(--accent-h) var(--accent-s) 45% / calc(0.05 + 0.09 * var(--energy))),
+    transparent 72%
+  );
   transition: background var(--dur) linear;
 }
 
 a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
 }
 a:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 h1,
 h2,
 h3 {
-  line-height: 1.1;
+  line-height: 1.08;
   margin: 0;
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-/* Tabular numerals for all telemetry/stat readouts. */
+/* Tabular monospace numerals for all telemetry/stat readouts. */
 .tnum {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+}
+
+/* Mono, letterspaced, uppercase: the teletype label voice. */
+.mono-label {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
 }
 
 /* ---------------------------------------------------------------- layout -- */
@@ -162,7 +175,9 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 0;
+  padding: 20px 0 14px;
+  border-bottom: 3px double var(--line-strong);
+  margin-bottom: 22px;
 }
 
 .brand {
@@ -177,18 +192,19 @@ h3 {
   font: inherit;
 }
 .brand__mark {
-  width: 30px;
-  height: 30px;
+  height: 34px;
+  width: auto;
   flex: none;
 }
 .brand__word {
-  font-weight: 900;
-  font-size: 22px;
-  letter-spacing: -0.03em;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: -0.01em;
 }
 .brand__word b {
   color: var(--accent);
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .navbtns {
@@ -225,37 +241,44 @@ h3 {
 .btn {
   --_bg: var(--panel);
   appearance: none;
-  border: 1px solid var(--line-strong);
+  border: 1.5px solid var(--line-strong);
   background: var(--_bg);
   color: var(--ink);
-  font: inherit;
+  font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 15px;
-  padding: 10px 18px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 11px 18px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease), border-color var(--dur) var(--ease),
-    background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    background var(--dur) var(--ease), box-shadow var(--dur) var(--ease), color var(--dur);
   will-change: transform;
 }
 .btn:hover {
-  border-color: var(--accent-line);
+  border-color: var(--ink);
+  background: var(--panel-2);
 }
 .btn:active {
-  transform: translateY(1px) scale(0.99);
+  transform: translate(2px, 2px);
 }
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .btn--primary {
-  background: linear-gradient(180deg, var(--ember), var(--ember-deep));
-  border-color: transparent;
-  color: #1a0f08;
-  box-shadow: 0 10px 30px -12px rgba(224, 69, 47, 0.6);
+  background: var(--ember);
+  border-color: var(--ink);
+  color: #fbf8f0;
+  box-shadow: var(--shadow);
 }
 .btn--primary:hover {
-  box-shadow: 0 14px 36px -12px rgba(224, 69, 47, 0.7);
+  background: var(--ember-deep);
+  color: #fbf8f0;
+}
+.btn--primary:active {
+  box-shadow: 0 0 0 var(--ink);
 }
 .btn--ghost {
   background: transparent;
@@ -268,12 +291,12 @@ h3 {
   border-color: var(--line);
 }
 .btn--big {
-  font-size: 17px;
-  padding: 14px 28px;
+  font-size: 15px;
+  padding: 15px 30px;
 }
 .btn--icon {
   padding: 8px 12px;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .iconbtn {
@@ -298,24 +321,25 @@ h3 {
   outline-offset: 2px;
 }
 
-/* Small pill/labels */
+/* Small stamp/labels (square, mono: rubber-stamp not pill) */
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   padding: 5px 12px;
 }
 .pill__dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--accent);
 }
 

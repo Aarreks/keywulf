@@ -174,6 +174,8 @@ export function App() {
           accuracy: result.accuracy,
           elapsedMs: result.elapsedMs,
           errors: result.errors,
+          storiesCleared: result.storiesCleared,
+          storyCount: result.storyCount,
           completedAt: new Date().toISOString(),
         };
         persist(recordOfficialResult(stateRef.current, official));
@@ -247,7 +249,9 @@ export function App() {
             elapsedMs: completedResult.elapsedMs,
             correctChars: 0,
             totalChars: 0,
-            storyCount: challenge.stories.length,
+            storyCount: completedResult.storyCount || challenge.stories.length,
+            storiesCleared: completedResult.storiesCleared,
+            timedOut: (completedResult.storiesCleared || 0) < (completedResult.storyCount || 0),
             samples: [],
           });
           setPractice(false);

@@ -1,12 +1,17 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
-// Lato, self-hosted via @fontsource (bundled + fingerprinted by Vite). No
-// third-party font request blocks gameplay. We load only the weights we use:
-// 400 (body/upcoming text), 700 (UI/labels), 900 (display/headlines).
-import '@fontsource/lato/400.css';
-import '@fontsource/lato/700.css';
-import '@fontsource/lato/900.css';
+// Self-hosted via @fontsource (bundled + fingerprinted by Vite). No third-party
+// font request blocks gameplay. Two typefaces:
+//   Libre Baskerville - bookish English serif for the masthead, headlines, and
+//     prose (the newspaper / humanities register).
+//   Courier Prime - a refined typewriter monospace for the typing passage, the
+//     HUD numerals, and all labels (the teletype / typewriter register).
+import '@fontsource/libre-baskerville/400.css';
+import '@fontsource/libre-baskerville/700.css';
+import '@fontsource/libre-baskerville/400-italic.css';
+import '@fontsource/courier-prime/400.css';
+import '@fontsource/courier-prime/700.css';
 
 import './index.css';
 import './game.css';

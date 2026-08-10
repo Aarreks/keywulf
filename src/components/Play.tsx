@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ClipboardEvent, CSSProperties } from 'react';
 import type { Challenge } from '../types';
 import { buildCorpus, buildStorySpans } from '../lib/challengeClient';
-import { computeScore, type Score } from '../lib/scoring';
+import { computeScore, TIME_LIMIT_MS, type Score } from '../lib/scoring';
 import { RollingTracker } from '../lib/rolling';
 import type { InProgress, Settings } from '../lib/storage';
 
@@ -10,6 +10,10 @@ export interface RunResult extends Score {
   correctChars: number;
   totalChars: number;
   storyCount: number;
+  /** Number of stories fully typed before the run ended. */
+  storiesCleared: number;
+  /** True when the 2-minute clock ended the run before the text was finished. */
+  timedOut: boolean;
   /** WPM samples over the run for the result graph: [progress0..1, wpm]. */
   samples: Array<{ p: number; wpm: number }>;
 }
@@ -65,7 +69,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   const lastKeyAtRef = useRef(0);
   const rafRef = useRef(0);
 
-  const [hud, setHud] = useState({ wpm: 0, acc: 100, progress: 0 });
+  const [hud, setHud] = useState({ wpm: 0, acc: 100, progress: 0, timeLeft: TIME_LIMIT_MS / 1000 });
   const [storyIdx, setStoryIdx] = useState(0);
   const [turnKey, setTurnKey] = useState(0);
   const [calm, setCalm] = useState(false);
@@ -110,35 +114,46 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     flow.style.transform = `translateY(${-targetOffset}px)`;
   }, [chars.length]);
 
-  const finish = useCallback(() => {
-    completedRef.current = true;
-    const now = nowMs();
-    const total = chars.length;
-    const score = computeScore({
-      correctChars: correctPosRef.current,
-      correctKeystrokes: correctKsRef.current,
-      incorrectKeystrokes: incorrectKsRef.current,
-      totalChars: total,
-      elapsedMs: elapsedMs(now),
-    });
-    // Ensure a final sample at p=1.
-    allSamplesRef.current.push({ p: 1, wpm: score.wpm });
-    if (settings.haptics && typeof navigator !== 'undefined' && navigator.vibrate) {
-      try {
-        navigator.vibrate([18, 40, 26]);
-      } catch {
-        /* ignore */
+  const finish = useCallback(
+    (timedOut: boolean) => {
+      if (completedRef.current) return;
+      completedRef.current = true;
+      const now = nowMs();
+      const total = chars.length;
+      lastKeyAtRef.current = timedOut ? now : lastKeyAtRef.current || now;
+      const elapsed = timedOut ? TIME_LIMIT_MS : elapsedMs(now);
+      const score = computeScore({
+        correctChars: correctPosRef.current,
+        correctKeystrokes: correctKsRef.current,
+        incorrectKeystrokes: incorrectKsRef.current,
+        totalChars: total,
+        elapsedMs: elapsed,
+      });
+      // Final sample at the point the run ended.
+      const endP = total > 0 ? idxRef.current / total : 1;
+      allSamplesRef.current.push({ p: timedOut ? endP : 1, wpm: score.wpm });
+      // Stories fully cleared by the end of the run.
+      const cleared = storySpans.filter((sp) => idxRef.current >= sp.end).length;
+      if (settings.haptics && typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate([18, 40, 26]);
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    if (inputRef.current) inputRef.current.blur();
-    onComplete({
-      ...score,
-      correctChars: correctPosRef.current,
-      totalChars: total,
-      storyCount: challenge.stories.length,
-      samples: allSamplesRef.current.slice(),
-    });
-  }, [chars.length, challenge.stories.length, elapsedMs, onComplete, settings.haptics]);
+      if (inputRef.current) inputRef.current.blur();
+      onComplete({
+        ...score,
+        correctChars: correctPosRef.current,
+        totalChars: total,
+        storyCount: challenge.stories.length,
+        storiesCleared: cleared,
+        timedOut,
+        samples: allSamplesRef.current.slice(),
+      });
+    },
+    [chars.length, challenge.stories.length, elapsedMs, onComplete, settings.haptics, storySpans],
+  );
 
   const processChar = useCallback(
     (ch: string) => {
@@ -151,6 +166,12 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         startedRef.current = true;
         startTimeRef.current = now;
         onStart();
+      } else if (elapsedMs(now) >= TIME_LIMIT_MS) {
+        // Belt and suspenders: the rAF loop normally ends the run at 2:00, but
+        // rAF can be throttled/paused (hidden tab); never let a late keystroke
+        // extend a run past the limit.
+        finish(true);
+        return;
       }
       lastKeyAtRef.current = now;
       const expected = chars[i];
@@ -181,9 +202,9 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         caret.classList.add('bump');
       }
       positionCaret();
-      if (idxRef.current >= chars.length) finish();
+      if (idxRef.current >= chars.length) finish(false);
     },
-    [chars, finish, onStart, positionCaret],
+    [chars, elapsedMs, finish, onStart, positionCaret],
   );
 
   const processBack = useCallback(() => {
@@ -271,15 +292,21 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
 
       if (startedRef.current && !completedRef.current) {
         const el = elapsedMs(now);
+        // Hard 2-minute clock: end the run when time is up.
+        if (el >= TIME_LIMIT_MS) {
+          finish(true);
+          return;
+        }
         const minutes = el / 60000;
         const wpm = minutes > 0 ? correctPosRef.current / 5 / minutes : 0;
         const totalKs = correctKsRef.current + incorrectKsRef.current;
         const acc = totalKs > 0 ? (correctKsRef.current / totalKs) * 100 : 100;
         const progress = idxRef.current / Math.max(1, chars.length);
+        const timeLeft = Math.max(0, Math.ceil((TIME_LIMIT_MS - el) / 1000));
 
         if (now - lastHudRef.current >= HUD_INTERVAL) {
           lastHudRef.current = now;
-          setHud({ wpm: Math.max(0, Math.round(wpm)), acc: Math.round(acc * 10) / 10, progress });
+          setHud({ wpm: Math.max(0, Math.round(wpm)), acc: Math.round(acc * 10) / 10, progress, timeLeft });
           setCalm(read.energy > 0.55 && progress > 0.06);
           const flow = flowRef.current;
           const stageEl = stageRef.current;
@@ -320,7 +347,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       running = false;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [chars.length, elapsedMs, onSnapshot, renderTelemetry, storySpans]);
+  }, [chars.length, elapsedMs, finish, onSnapshot, renderTelemetry, storySpans]);
 
   // Seed from a resume snapshot, then set up caret + focus.
   useEffect(() => {
@@ -378,8 +405,10 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
           <div className="stat__label">Accuracy</div>
         </div>
         <div className="stat">
-          <div className="stat__val">{Math.round(hud.progress * 100)}%</div>
-          <div className="stat__label">Progress</div>
+          <div className={`stat__val ${hud.timeLeft <= 15 ? 'stat__val--urgent' : ''}`}>
+            {Math.floor(hud.timeLeft / 60)}:{(hud.timeLeft % 60).toString().padStart(2, '0')}
+          </div>
+          <div className="stat__label">Left</div>
         </div>
         <div className="hud__spacer" />
         <div className="stat hud__story">
