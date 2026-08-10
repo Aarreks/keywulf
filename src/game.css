@@ -157,6 +157,11 @@
   transition: color var(--dur-fast) linear;
   border-radius: 3px;
 }
+/* Headline characters render bold. Courier Prime is monospace, so the bold
+   weight has the same advance width: no reflow, just a visible story seam. */
+.ch--hl {
+  font-weight: 700;
+}
 .ch.correct {
   color: var(--ink);
 }
@@ -263,6 +268,44 @@
 }
 .telemetry__err {
   fill: var(--bad);
+}
+/* Result-screen variant of the telemetry graph. */
+.telemetry--result {
+  position: relative;
+  height: 96px;
+  opacity: 1;
+}
+/* Keep strokes crisp: the viewBox is stretched non-uniformly, so let stroke
+   widths be computed in screen pixels instead of scaling with the distortion. */
+.telemetry__line,
+.telemetry__grid,
+.telemetry__avg {
+  vector-effect: non-scaling-stroke;
+}
+.telemetry__avg {
+  stroke: var(--faint);
+  stroke-width: 1;
+  stroke-dasharray: 0.6 0.9;
+}
+.telemetry__dot {
+  position: absolute;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--bg);
+}
+.telemetry__avg-label {
+  position: absolute;
+  left: 0;
+  top: -4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .telemetry__label {
   fill: var(--muted);

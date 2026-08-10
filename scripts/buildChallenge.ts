@@ -5,6 +5,7 @@
 import type { Challenge, ChallengeSource, Story } from '../src/types';
 import { sanitizeText, countWords } from '../src/lib/sanitize';
 import { gameNumberForDate } from '../src/lib/gameNumber';
+import { MIN_STORIES, MAX_WORDS } from './challengeSchema';
 
 export interface RawSource {
   title?: unknown;
@@ -61,6 +62,20 @@ function cleanRegions(raw: unknown): string[] {
   return regions.length > 0 ? regions : ['Global'];
 }
 
+/**
+ * Give a headline terminal punctuation so the typed corpus never welds a
+ * headline into the following sentence ("...troops to Russia Ukraine warned...").
+ * Appends a period unless the headline already ends with . ? ! or : (optionally
+ * followed by a closing quote), and collapses an accidental doubled period.
+ */
+export function ensureTerminalPunctuation(headline: string): string {
+  let h = headline.trim();
+  if (h === '') return h;
+  // Model typo "plan.." -> "plan." -- but leave a deliberate "..." alone.
+  h = h.replace(/(^|[^.])\.\.$/, '$1.');
+  return /[.?!:]["']?$/.test(h) ? h : h + '.';
+}
+
 function dedupeSources(sources: ChallengeSource[]): ChallengeSource[] {
   const seen = new Set<string>();
   const out: ChallengeSource[] = [];
@@ -80,7 +95,7 @@ function dedupeSources(sources: ChallengeSource[]): ChallengeSource[] {
  */
 export function assembleChallenge(input: AssembleInput): Challenge {
   const cleaned = input.stories.map((s) => {
-    const headline = sanitizeText(s.headline);
+    const headline = ensureTerminalPunctuation(sanitizeText(s.headline));
     const body = sanitizeText(s.body);
     const category = sanitizeText(s.category) || 'World';
     const regions = cleanRegions(s.regions);
@@ -98,7 +113,19 @@ export function assembleChallenge(input: AssembleInput): Challenge {
     .sort((a, b) => b.s.importance - a.s.importance || a.i - b.i)
     .map(({ s }, idx): Story => ({ rank: idx + 1, ...s }));
 
-  const wordCount = ranked.reduce((sum, s) => sum + countWords(s.headline) + countWords(s.body), 0);
+  // Enforce the word budget deterministically: the model overshoots ~half the
+  // time, so drop whole lowest-importance stories from the bottom (never
+  // mangling sentences) while we stay at or above the minimum story count.
+  // If it still cannot fit, validation fails and the retry loop takes over.
+  const storyWords = (s: Story) => countWords(s.headline) + countWords(s.body);
+  while (
+    ranked.length > MIN_STORIES &&
+    ranked.reduce((sum, s) => sum + storyWords(s), 0) > MAX_WORDS
+  ) {
+    ranked.pop();
+  }
+
+  const wordCount = ranked.reduce((sum, s) => sum + storyWords(s), 0);
   const grounding = cleanSources(input.groundingSources);
   const sourcePool = dedupeSources([...grounding, ...ranked.flatMap((s) => s.sources)]);
 

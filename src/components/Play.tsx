@@ -39,6 +39,18 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   const corpus = useMemo(() => buildCorpus(challenge), [challenge]);
   const storySpans = useMemo(() => buildStorySpans(challenge), [challenge]);
   const chars = useMemo(() => Array.from(corpus), [corpus]);
+  // Which corpus offsets belong to a headline (rendered bold: Courier Prime is
+  // monospace, so bold has identical advance width and causes zero reflow).
+  const isHeadline = useMemo(() => {
+    const flags = new Array<boolean>(corpus.length).fill(false);
+    challenge.stories.forEach((s, i) => {
+      const span = storySpans[i];
+      if (!span) return;
+      const hlLen = s.headline.trim().replace(/\s+/g, ' ').length;
+      for (let k = span.start; k < Math.min(span.start + hlLen, corpus.length); k++) flags[k] = true;
+    });
+    return flags;
+  }, [challenge, storySpans, corpus.length]);
 
   // DOM refs.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -432,7 +444,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
             {chars.map((ch, i) => (
               <span
                 key={i}
-                className="ch"
+                className={isHeadline[i] ? 'ch ch--hl' : 'ch'}
                 ref={(el) => {
                   spanRefs.current[i] = el;
                 }}
