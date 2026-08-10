@@ -50,6 +50,11 @@ export function Result({
 
   async function doShare() {
     const outcome = await shareOrCopy(shareText);
+    if (outcome === 'cancelled') {
+      // User closed the share sheet deliberately; no feedback needed.
+      setShareState('idle');
+      return;
+    }
     setShareState(outcome);
     if (outcome !== 'failed') setTimeout(() => setShareState('idle'), 2600);
   }

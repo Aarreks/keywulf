@@ -36,35 +36,64 @@ export function buildShareText(data: ShareData): string {
   return lines.join('\n');
 }
 
-export type ShareOutcome = 'shared' | 'copied' | 'failed';
+export type ShareOutcome = 'shared' | 'copied' | 'cancelled' | 'failed';
 
 /**
- * Share via the Web Share API where available, otherwise copy to clipboard.
- * Returns what happened so the UI can give tactile feedback.
+ * Native share sheets are only worth invoking on real mobile devices. Desktop
+ * browsers (notably Brave) may expose navigator.share but fail or hang the
+ * flow - and a failed share consumes the click's user activation, which then
+ * blocks the clipboard fallback until the NEXT click. Desktop users want a
+ * copy anyway.
+ */
+function isMobileLike(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS 13+ reports itself as macOS but has a touchscreen.
+  return (navigator.maxTouchPoints ?? 0) > 2 && /Mac/.test(ua);
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Share via the native share sheet on mobile devices; copy to the clipboard
+ * everywhere else. Returns what happened so the UI can give tactile feedback.
  */
 export async function shareOrCopy(text: string): Promise<ShareOutcome> {
-  try {
-    const nav = typeof navigator !== 'undefined' ? navigator : undefined;
-    if (nav && typeof nav.share === 'function') {
+  const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+  if (!nav) return 'failed';
+
+  if (typeof nav.share === 'function' && isMobileLike()) {
+    try {
       await nav.share({ text });
       return 'shared';
-    }
-    if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
-      await nav.clipboard.writeText(text);
-      return 'copied';
-    }
-  } catch (err) {
-    // User cancelled the share sheet, or permission denied. Treat cancel as a
-    // non-failure by trying clipboard as a fallback where possible.
-    if (err instanceof DOMException && err.name === 'AbortError') return 'failed';
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-        return 'copied';
-      }
-    } catch {
-      /* fall through */
+    } catch (err) {
+      // The user closed the share sheet on purpose: quietly do nothing.
+      if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
+      // Anything else: fall through to the clipboard.
     }
   }
-  return 'failed';
+
+  return (await copyToClipboard(text)) ? 'copied' : 'failed';
 }
