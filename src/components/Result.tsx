@@ -99,7 +99,10 @@ export function Result({
       )}
 
       <div className="result__actions">
-        <button className="btn btn--primary" onClick={doShare}>
+        <button
+          className={`btn btn--primary${shareState === 'copied' || shareState === 'shared' ? ' btn--ok' : ''}`}
+          onClick={doShare}
+        >
           {shareState === 'idle' && (
             <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
               <ShareIcon size={16} /> Share result

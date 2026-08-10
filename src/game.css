@@ -444,9 +444,17 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+/* Success state for the Share button: the whole button turns green and the
+   label goes white (defined after .btn--primary so it wins when combined). */
+.btn--ok,
+.btn--ok:hover {
+  background: #2f7d4d;
+  border-color: var(--ink);
+  color: #fbf8f0;
+}
 .share-ok {
-  color: var(--good);
-  font-weight: 800;
+  color: inherit;
+  font-weight: 700;
 }
 
 /* ------------------------------------------------------- completed-today -- */
