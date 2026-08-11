@@ -4,8 +4,14 @@ name: Daily challenge
 # Search), validates it hard, builds, and deploys to Cloudflare Workers Static
 # Assets. Runs ONCE per day for the entire world - never per visitor.
 #
-# GitHub cron is UTC. 00:15 UTC gives news sites time to settle after midnight.
-# Also runnable on demand via "Run workflow" (workflow_dispatch).
+# PUBLISH CUTOFF: the product promises the new briefing is live by 01:00 UTC.
+# GitHub cron is best-effort (runs often start minutes-to-tens-of-minutes late),
+# so two staggered attempts provide the buffer: a primary at 00:05 and a safety
+# retry at 00:30. The retry checks the LIVE site first and exits as a no-op if
+# today's puzzle is already published - a second generation for the same date
+# must never replace text players are already typing.
+# Also runnable on demand via "Run workflow" (workflow_dispatch), which always
+# regenerates (no freshness skip).
 #
 # If ANY step fails (generation, validation, tests, build, deploy) the job fails
 # loudly and does NOT deploy, so a broken day never replaces the last good
@@ -13,7 +19,8 @@ name: Daily challenge
 
 on:
   schedule:
-    - cron: '15 0 * * *' # 00:15 UTC daily
+    - cron: '5 0 * * *' # primary attempt (00:05 UTC)
+    - cron: '30 0 * * *' # safety retry; no-op if today's puzzle is already live
   workflow_dispatch:
     inputs:
       date:
@@ -33,16 +40,37 @@ jobs:
   generate-and-deploy:
     runs-on: ubuntu-latest
     steps:
+      # Scheduled runs only: if the live site already serves today's puzzle
+      # (the earlier attempt succeeded), exit as a successful no-op. Manual
+      # dispatches skip this check so a bad day can always be regenerated.
+      - name: Check whether today's puzzle is already live
+        id: fresh
+        if: github.event_name == 'schedule'
+        run: |
+          LIVE=$(curl -s --max-time 20 "https://keywulf.com/data/today.json?v=$(date +%s)" | grep -o '"date": *"[0-9-]*"' | head -1 | grep -o '[0-9-]\{10\}' || true)
+          TODAY=$(date -u +%F)
+          echo "live=$LIVE today=$TODAY"
+          if [ "$LIVE" = "$TODAY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Today's puzzle is already live; nothing to do."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.fresh.outputs.skip != 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.fresh.outputs.skip != 'true'
         with:
           node-version: 20
           cache: npm
 
       - run: npm ci
+        if: steps.fresh.outputs.skip != 'true'
 
       - name: Generate today's challenge (Gemini + Google Search grounding)
+        if: steps.fresh.outputs.skip != 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
@@ -50,15 +78,19 @@ jobs:
         run: npm run generate:daily
 
       - name: Validate the generated challenge
+        if: steps.fresh.outputs.skip != 'true'
         run: npm run validate:challenge
 
       - name: Unit tests
+        if: steps.fresh.outputs.skip != 'true'
         run: npm test
 
       - name: Build static site
+        if: steps.fresh.outputs.skip != 'true'
         run: npm run build
 
       - name: Deploy to Cloudflare Workers Static Assets
+        if: steps.fresh.outputs.skip != 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
