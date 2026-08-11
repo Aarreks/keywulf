@@ -290,7 +290,7 @@ export function App() {
       <div className="container">
         <footer className="footer">
           <span>
-            Keywulf &middot; <a onClick={goHome} style={{ cursor: 'pointer' }}>Type the world</a>
+            Keywulf &middot; <a onClick={goHome} style={{ cursor: 'pointer' }}>Daily news typeracing</a>
           </span>
           <span style={{ display: 'inline-flex', gap: 18 }}>
             <a onClick={() => setPhase('about')} style={{ cursor: 'pointer' }}>

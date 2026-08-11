@@ -1,4 +1,4 @@
-# Keywulf — Type the world
+# Keywulf — Daily news typeracing
 
 A once-per-day shared typing game built from the world's most important news.
 Everyone on Earth gets the same briefing, in the same order, on the same UTC day,

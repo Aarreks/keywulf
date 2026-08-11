@@ -18,7 +18,7 @@ export function StartScreen({ challenge, isToday, resumable, onStart, onResume }
           No. {challenge.gameNumber}
         </span>
         <h1 className="start__title">
-          Type the <b>world</b>.
+          Daily news <b>typeracing</b>.
         </h1>
         <p className="start__tag">
           The day's news, in two minutes of typing. Same briefing for everyone, everywhere.
