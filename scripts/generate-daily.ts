@@ -27,6 +27,7 @@ import { validateChallenge } from './challengeSchema';
 import { todayUtc } from '../src/lib/gameNumber';
 import { SYSTEM_INSTRUCTION, researchPrompt, formatPrompt } from './prompts';
 import { enrichSources } from './enrichSources';
+import { refineTitles } from './refineTitles';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -148,11 +149,19 @@ async function main(): Promise<void> {
   // them (server-side, once per day) to real article URLs + real titles so the
   // Sources panel is readable. Every failure falls back gracefully.
   console.log(`Resolving ${rawSources.length} grounding sources to article titles...`);
-  const sources = await enrichSources(
+  const fetched = await enrichSources(
     rawSources.map((s) => ({ title: String(s.title ?? s.url), url: String(s.url) })),
   );
-  const enrichedCount = sources.filter((s, i) => s.title !== rawSources[i]?.title).length;
-  console.log(`Sources resolved: ${enrichedCount}/${sources.length} gained article titles.`);
+  const enrichedCount = fetched.filter((s, i) => s.title !== rawSources[i]?.title).length;
+  console.log(`Sources resolved: ${enrichedCount}/${fetched.length} gained article titles.`);
+
+  // One cheap model pass to repair junk titles (bot-check pages, section-only
+  // titles, welded-on site names). Code-verified: the model can only rearrange
+  // material it was given, never invent a headline. Non-fatal on failure.
+  console.log('Refining source titles with the model...');
+  const sources = await refineTitles(ai, MODEL, fetched);
+  const refinedCount = sources.filter((s, i) => s.title !== fetched[i]?.title).length;
+  console.log(`Titles refined: ${refinedCount} adjusted.`);
 
   let feedback: string | undefined;
   const errors: string[] = [];

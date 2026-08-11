@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import type { AggregateStats } from '../lib/storage';
 import { formatAccuracyPct } from '../lib/scoring';
+import { curvePath } from '../lib/graph';
 
 interface Props {
   stats: AggregateStats;
@@ -69,29 +71,65 @@ function Cell({ label, value, good }: { label: string; value: string; good?: boo
   );
 }
 
+// Pixel-space graph (NO viewBox: user units = CSS pixels), matching the result
+// graph's visual language - so dots are true circles and strokes are uniform
+// on every screen.
 function HistoryGraph({ data }: { data: Array<{ g: number; wpm: number }> }) {
-  const W = 100;
-  const H = 30;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 640, h: 120 });
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setSize({ w: Math.max(160, Math.round(r.width)), h: Math.max(80, Math.round(r.height)) });
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const { w, h } = size;
+  const PAD_X = 8; // keeps end dots un-clipped
+  const PAD_TOP = 10;
+  const PAD_BOTTOM = 12;
   const wpms = data.map((d) => d.wpm);
   const min = Math.min(...wpms);
   const max = Math.max(...wpms);
   const range = Math.max(1, max - min);
   const n = data.length;
-  const points = data.map((d, i) => {
-    const x = (i / (n - 1)) * W;
-    // Pad the vertical range a little so the line is not glued to edges.
-    const y = H - 3 - ((d.wpm - min) / range) * (H - 6);
-    return { x, y, wpm: d.wpm };
-  });
-  const line = points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const pts = data.map((d, i) => ({
+    x: PAD_X + (i / (n - 1)) * (w - PAD_X * 2),
+    y: PAD_TOP + (1 - (d.wpm - min) / range) * (h - PAD_TOP - PAD_BOTTOM),
+  }));
+  const line = curvePath(pts);
+  const area = `${line} L ${pts[n - 1].x.toFixed(1)} ${h - 1} L ${pts[0].x.toFixed(1)} ${h - 1} Z`;
 
   return (
-    <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="WPM history">
-      <line className="spark__axis" x1="0" y1={H - 1} x2={W} y2={H - 1} />
-      <polyline className="spark__line" points={line} />
-      {points.map((p, i) => (
-        <circle key={i} className="spark__dot" cx={p.x} cy={p.y} r={i === n - 1 ? 1.2 : 0.7} />
-      ))}
-    </svg>
+    <div ref={boxRef} className="spark" role="img" aria-label="WPM history">
+      <svg width={w} height={h}>
+        <line className="telemetry__grid" x1="0" y1={h - 1} x2={w} y2={h - 1} />
+        <path className="telemetry__area" d={area} />
+        <path className="telemetry__line" d={line} />
+        {pts.map((p, i) => (
+          <circle
+            key={i}
+            className="telemetry__dot"
+            cx={p.x.toFixed(1)}
+            cy={p.y.toFixed(1)}
+            r={i === n - 1 ? 4.5 : 3}
+          />
+        ))}
+      </svg>
+      <span className="spark__minmax tnum" style={{ top: 0 }}>
+        {max}
+      </span>
+      <span className="spark__minmax tnum" style={{ bottom: 0 }}>
+        {min}
+      </span>
+    </div>
   );
 }

@@ -54,12 +54,18 @@ export function extractHtmlTitle(html: string): string | null {
 export function titleFromSlug(url: string): string | null {
   try {
     const u = new URL(url);
+    // An unresolved grounding redirect is a wrapper, not an article URL - its
+    // path ("grounding-api-redirect/<token>") must never become a title.
+    if (u.hostname.endsWith('vertexaisearch.cloud.google.com')) return null;
     let best: string[] = [];
     for (const seg of u.pathname.split('/').filter(Boolean)) {
-      const words = seg
-        .replace(/\.(html?|php|aspx?|cms)$/i, '')
+      const cleaned = seg.replace(/\.(html?|php|aspx?|cms)$/i, '');
+      // Real headline slugs are lowercase alphanumerics joined by - or _.
+      // Anything else (Base64ish redirect tokens, mixed-case IDs) is noise.
+      if (!/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(cleaned)) continue;
+      const words = cleaned
         .split(/[-_]+/)
-        .filter((w) => w.length > 0 && !/^\d+$/.test(w));
+        .filter((w) => w.length > 0 && w.length <= 24 && !/^\d+$/.test(w));
       if (words.length > best.length) best = words;
     }
     if (best.length < 3) return null; // too short to be a headline slug

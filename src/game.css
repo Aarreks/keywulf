@@ -473,29 +473,24 @@
 }
 
 /* --------------------------------------------------------------- history -- */
+/* Stats history graph: pixel-space SVG sharing the telemetry visual language
+   (accent curve, soft area fill, bg-ringed circular dots). */
 .spark {
+  position: relative;
   width: 100%;
   height: 120px;
+}
+.spark svg {
   display: block;
   overflow: visible;
 }
-.spark__line {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-.spark__dot {
-  fill: var(--ember);
-}
-.spark__axis {
-  stroke: var(--line);
-  stroke-width: 1;
-}
-.spark__glabel {
-  fill: var(--faint);
-  font-size: 9px;
+.spark__minmax {
+  position: absolute;
+  right: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--faint);
 }
 
 .tablelist {
