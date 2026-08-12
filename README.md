@@ -93,7 +93,7 @@ and a "reduced intensity" setting are respected.
 Full step-by-step setup (GitHub, Gemini, Cloudflare, DNS for `keywulf.com`) lives
 in `DEPLOY.md`. CI (`.github/workflows/ci.yml`) runs on every push/PR using the
 sample fixture. The daily job (`.github/workflows/daily.yml`) generates + deploys
-at 00:05 UTC (with a 00:30 no-op-if-fresh safety retry; live by 01:00 UTC) and is
+at 00:05 UTC (with a 00:30 no-op-if-fresh safety retry; live by ~03:00 UTC - GitHub delays midnight-UTC crons by up to ~2h) and is
 also runnable on demand.
 
 Secrets required: `GEMINI_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
