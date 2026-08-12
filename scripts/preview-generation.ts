@@ -25,8 +25,24 @@ interface ChunkLike {
   web?: { uri?: string; title?: string };
 }
 
+/** Same continuity input production uses (guarded against same-day fetch). */
+async function fetchPreviousHeadlines(): Promise<string[]> {
+  try {
+    const res = await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    const j = (await res.json()) as { date?: string; stories?: Array<{ headline?: string }> };
+    if (!j?.date || j.date >= DATE || !Array.isArray(j.stories)) return [];
+    return j.stories.map((s) => String(s.headline ?? '')).filter(Boolean).slice(0, 16);
+  } catch {
+    return [];
+  }
+}
+
 async function main(): Promise<void> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const previousHeadlines = await fetchPreviousHeadlines();
+  console.log(`continuity: ${previousHeadlines.length} previous headlines\n`);
 
   console.log(`Research (${MODEL}, grounded) for ${DATE}...`);
   const res = await ai.models.generateContent({
@@ -58,7 +74,7 @@ async function main(): Promise<void> {
     try {
       const r = await ai.models.generateContent({
         model: MODEL,
-        contents: formatPrompt(notes, DATE),
+        contents: formatPrompt(notes, DATE, previousHeadlines),
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
           responseMimeType: 'application/json',
