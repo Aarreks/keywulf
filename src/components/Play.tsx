@@ -386,6 +386,22 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         inputRef.current.value = corpus.slice(0, resume.typedCount);
         lastLenRef.current = resume.typedCount;
       }
+      // Restore the HUD immediately. The animation loop only recomputes it once
+      // the (paused) clock restarts on the next keystroke, so without this the
+      // player stares at 0 WPM / 100% / 2:00 until they type a character.
+      const el = resume.elapsedMs;
+      const minutes = el / 60000;
+      const wpm = minutes > 0 ? correctPosRef.current / 5 / minutes : 0;
+      const totalKs = resume.correctKeystrokes + resume.incorrectKeystrokes;
+      const acc = totalKs > 0 ? (resume.correctKeystrokes / totalKs) * 100 : 100;
+      setHud({
+        wpm: Math.max(0, Math.round(wpm)),
+        acc: Math.round(acc * 10) / 10,
+        progress: resume.typedCount / Math.max(1, chars.length),
+        timeLeft: Math.max(0, Math.ceil((TIME_LIMIT_MS - el) / 1000)),
+      });
+      const ci = storySpans.findIndex((sp) => resume.typedCount < sp.end);
+      setStoryIdx(ci === -1 ? storySpans.length - 1 : ci);
     }
     positionCaret();
     focusInput();
