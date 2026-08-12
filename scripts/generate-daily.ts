@@ -141,9 +141,34 @@ async function research(ai: GoogleGenAI): Promise<{ notes: string; sources: RawS
   throw new Error(`Research failed after ${MAX_ATTEMPTS} attempts: ${lastError}`);
 }
 
+/**
+ * Yesterday's headlines, fetched from the live site, feed the format prompt's
+ * continuity rules (lead with what is NEW; never reuse yesterday's wording).
+ * Non-fatal: any failure just means no continuity section. Guarded so a
+ * same-day regeneration never treats its own stories as "yesterday's".
+ */
+async function fetchPreviousHeadlines(): Promise<string[]> {
+  try {
+    const res = await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    const j = (await res.json()) as { date?: string; stories?: Array<{ headline?: string }> };
+    if (!j?.date || j.date >= DATE || !Array.isArray(j.stories)) return [];
+    return j.stories.map((s) => String(s.headline ?? '')).filter(Boolean).slice(0, 16);
+  } catch {
+    return [];
+  }
+}
+
 async function main(): Promise<void> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
   const { notes, sources: rawSources } = await research(ai);
+  const previousHeadlines = await fetchPreviousHeadlines();
+  console.log(
+    previousHeadlines.length > 0
+      ? `Continuity: ${previousHeadlines.length} headlines from the previous briefing.`
+      : 'Continuity: no previous briefing available.',
+  );
 
   // Grounding gives opaque redirect URLs titled only with a domain. Resolve
   // them (server-side, once per day) to real article URLs + real titles so the
@@ -171,7 +196,7 @@ async function main(): Promise<void> {
     try {
       const response = await ai.models.generateContent({
         model: MODEL,
-        contents: formatPrompt(notes, DATE, feedback),
+        contents: formatPrompt(notes, DATE, previousHeadlines, feedback),
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
           responseMimeType: 'application/json',

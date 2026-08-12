@@ -28,8 +28,24 @@ Plain text only. No JSON yet.`;
 }
 
 /** Step 2: tool-free JSON-mode formatting of the notes into the briefing. */
-export function formatPrompt(notes: string, date: string, feedback?: string): string {
+export function formatPrompt(
+  notes: string,
+  date: string,
+  previousHeadlines: string[] = [],
+  feedback?: string,
+): string {
+  const continuity =
+    previousHeadlines.length > 0
+      ? `
+CONTINUITY (yesterday's briefing covered the stories below)
+${previousHeadlines.map((h) => '- ' + h).join('\n')}
+- For a story continuing from yesterday, lead with what is NEW today (fresh numbers, decisions, developments) rather than restating yesterday's summary.
+- Never reuse yesterday's headline wording for a continuing story.
+- Drop a story with no new development since yesterday unless it remains clearly top-tier significant.
+`
+      : '';
   return `Below are today's research notes (${date}, UTC). Compress them into the Keywulf daily briefing as JSON.
+${continuity}
 
 SELECTION (hard requirements)
 - Output BETWEEN 12 AND 14 stories. If strict 24-hour recency leaves fewer than 12, include the freshest remaining items up to 48 hours old rather than returning fewer than 12.
@@ -41,6 +57,8 @@ WORD BUDGET (HARD CAP: 300 total words across all headlines+bodies; target 170 t
 - Budget arithmetic: at 14 stories you have about 20 words per story TOTAL (headline + body combined), so keep headlines near 5 words and bodies near 13.
 - If the draft runs over budget, CUT WHOLE STORIES from the bottom rather than mangling sentences.
 - Headlines end WITHOUT punctuation; publishing code appends a period automatically.
+- Headlines in SENTENCE CASE: capitalize only the first word and proper nouns ("Typhoon forces mass evacuations in eastern China", never "Typhoon Forces Mass Evacuations In Eastern China"). This text is typed by hand; long runs of consecutive capitals are hostile to type.
+- Prefer plain, common vocabulary where accuracy permits, and avoid stacking long proper-noun lists into a single clause when a lighter phrasing exists.
 - Wire-service compression. Cut every word that does not earn its place.
 
 VOICE

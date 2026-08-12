@@ -19,8 +19,8 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@fontsource/bitter": "^5.3.0",
     "@fontsource/courier-prime": "^5.3.0",
-    "@fontsource/libre-baskerville": "^5.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

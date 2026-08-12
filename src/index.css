@@ -12,9 +12,9 @@
 :root {
   color-scheme: light dark;
 
-  /* Type: bookish English serif for prose/masthead; typewriter mono for the
-     passage, numerals, and labels. */
-  --font-serif: 'Libre Baskerville', 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+  /* Type: slab serif for prose/masthead (newsprint register); typewriter mono
+     for the passage, numerals, and labels. */
+  --font-serif: 'Bitter', Rockwell, 'Roboto Slab', 'Courier New', Georgia, serif;
   --font-mono: 'Courier Prime', 'Courier New', ui-monospace, 'Cascadia Mono', monospace;
 
   /* Live performance signal (updated imperatively during play). */
