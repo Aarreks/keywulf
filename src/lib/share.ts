@@ -58,7 +58,8 @@ export function buildShareText(data: ShareData): string {
     lines.push(`${bar} ${done}/${data.storyCount}`);
   }
   if (!data.practice) lines.push(`${E.fire} Streak ${data.streak}`);
-  lines.push('keywulf.com');
+  // Mobile share sheets / messaging apps only reliably auto-link a full URL.
+  lines.push(data.device === 'mobile' ? 'https://keywulf.com' : 'keywulf.com');
   return lines.join('\n');
 }
 
