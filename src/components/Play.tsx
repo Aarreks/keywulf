@@ -14,6 +14,11 @@ export interface RunResult extends Score {
   storiesCleared: number;
   /** True when the 2-minute clock ended the run before the text was finished. */
   timedOut: boolean;
+  /**
+   * How far through the story-in-progress the run ended, 0..1. Zero when the
+   * run ended exactly on a story boundary (or cleared the whole briefing).
+   */
+  currentStoryFraction: number;
   /** WPM samples over the run for the result graph: [progress0..1, wpm]. */
   samples: Array<{ p: number; wpm: number }>;
 }
@@ -144,8 +149,17 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       // Final sample at the point the run ended.
       const endP = total > 0 ? idxRef.current / total : 1;
       allSamplesRef.current.push({ p: timedOut ? endP : 1, wpm: score.wpm });
-      // Stories fully cleared by the end of the run.
+      // Stories fully cleared by the end of the run, plus how far into the
+      // next story the caret reached (drives the partial moon in share text).
       const cleared = storySpans.filter((sp) => idxRef.current >= sp.end).length;
+      let currentStoryFraction = 0;
+      const inProgressSpan = storySpans[cleared];
+      if (inProgressSpan && idxRef.current > inProgressSpan.start) {
+        currentStoryFraction = Math.max(
+          0,
+          Math.min(1, (idxRef.current - inProgressSpan.start) / (inProgressSpan.end - inProgressSpan.start)),
+        );
+      }
       if (settings.haptics && typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           navigator.vibrate([18, 40, 26]);
@@ -161,6 +175,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         storyCount: challenge.stories.length,
         storiesCleared: cleared,
         timedOut,
+        currentStoryFraction,
         samples: allSamplesRef.current.slice(),
       });
     },

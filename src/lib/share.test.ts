@@ -7,8 +7,11 @@ const WOLF = cp(0x1f43a);
 const KEYS = cp(0x2328, 0xfe0f);
 const TARGET = cp(0x1f3af);
 const TIMER = cp(0x23f1, 0xfe0f);
-const DONE = cp(0x1f7e9);
-const MISS = cp(0x2b1c);
+const FULL = cp(0x1f315);
+const GIBBOUS = cp(0x1f316);
+const HALF = cp(0x1f317);
+const CRESCENT = cp(0x1f318);
+const NEW = cp(0x1f311);
 const FIRE = cp(0x1f525);
 const PHONE = cp(0x1f4f1);
 
@@ -28,7 +31,7 @@ describe('buildShareText', () => {
       [
         `${WOLF} Keywulf #222`,
         `${KEYS} 86 WPM (desktop) | ${TARGET} 98.7% | ${TIMER} 2:00`,
-        `${DONE.repeat(5)}${MISS.repeat(7)} 5/12`,
+        `${FULL.repeat(5)}${NEW.repeat(7)} 5/12`,
         `${FIRE} Streak 7`,
         'keywulf.com',
       ].join('\n'),
@@ -77,8 +80,28 @@ describe('buildShareText', () => {
       storyCount: 12,
       streak: 30,
     });
-    expect(text).toContain(`${DONE.repeat(12)} 12/12`);
-    expect(text).not.toContain(MISS);
+    expect(text).toContain(`${FULL.repeat(12)} 12/12`);
+    expect(text).not.toContain(NEW);
+  });
+
+  it('shows a partial moon for the story-in-progress by fraction', () => {
+    const base = {
+      gameNumber: 222,
+      wpm: 76,
+      accuracy: 0.982,
+      elapsedMs: 120000,
+      storiesCleared: 5,
+      storyCount: 12,
+      streak: 4,
+    };
+    const at = (f: number) =>
+      buildShareText({ ...base, currentStoryFraction: f }).split('\n')[2];
+    expect(at(0.8)).toBe(`${FULL.repeat(5)}${GIBBOUS}${NEW.repeat(6)} 5/12`);
+    expect(at(0.5)).toBe(`${FULL.repeat(5)}${HALF}${NEW.repeat(6)} 5/12`);
+    expect(at(0.2)).toBe(`${FULL.repeat(5)}${CRESCENT}${NEW.repeat(6)} 5/12`);
+    expect(at(0.05)).toBe(`${FULL.repeat(5)}${NEW.repeat(7)} 5/12`);
+    // Even 99% through, an uncleared story never earns a full moon.
+    expect(at(0.99)).toBe(`${FULL.repeat(5)}${GIBBOUS}${NEW.repeat(6)} 5/12`);
   });
 
   it('labels practice runs and omits the streak line', () => {
@@ -107,8 +130,8 @@ describe('buildShareText', () => {
       storyCount: 0,
       streak: 2,
     });
-    expect(text).not.toContain(DONE);
-    expect(text).not.toContain(MISS);
+    expect(text).not.toContain(FULL);
+    expect(text).not.toContain(NEW);
     expect(text).toContain('keywulf.com');
   });
 
@@ -122,7 +145,7 @@ describe('buildShareText', () => {
       storyCount: 12,
       streak: 2,
     });
-    expect(text).toContain(`${DONE.repeat(12)} 12/12`);
+    expect(text).toContain(`${FULL.repeat(12)} 12/12`);
   });
 
   it('rounds WPM and formats accuracy to one decimal', () => {

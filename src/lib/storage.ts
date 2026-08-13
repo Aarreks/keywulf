@@ -43,6 +43,8 @@ export interface OfficialResult {
   storiesCleared: number;
   /** Total stories in that day's briefing. */
   storyCount: number;
+  /** Fraction (0..1) of the story-in-progress typed when the run ended. */
+  storyFraction?: number;
   completedAt: string; // ISO timestamp
 }
 
@@ -147,6 +149,7 @@ function coerceResult(date: string, val: unknown): OfficialResult | null {
     // Fields added with the 2-minute format; older blobs default to 0.
     storiesCleared: num(v.storiesCleared),
     storyCount: num(v.storyCount),
+    storyFraction: Math.max(0, Math.min(1, num(v.storyFraction))),
     completedAt: typeof v.completedAt === 'string' ? v.completedAt : new Date().toISOString(),
   };
 }

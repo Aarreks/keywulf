@@ -42,6 +42,7 @@ export function Result({
         elapsedMs: result.elapsedMs,
         storiesCleared: result.storiesCleared,
         storyCount: result.storyCount,
+        currentStoryFraction: result.currentStoryFraction,
         streak,
         practice,
         device: detectDevice(),

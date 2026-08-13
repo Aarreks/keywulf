@@ -12,6 +12,8 @@ export interface ShareData {
   storiesCleared: number;
   /** Total stories in the day's briefing. */
   storyCount: number;
+  /** Fraction (0..1) of the story-in-progress typed when the run ended. */
+  currentStoryFraction?: number;
   streak: number;
   practice?: boolean;
   /** Where the run was typed; a phone WPM is a different feat. */
@@ -26,10 +28,27 @@ const E = {
   phone: String.fromCodePoint(0x1f4f1), // mobile phone (mobile runs)
   target: String.fromCodePoint(0x1f3af), // direct hit (accuracy)
   timer: String.fromCodePoint(0x23f1, 0xfe0f), // stopwatch
-  cleared: String.fromCodePoint(0x1f7e9), // green square (story cleared)
-  missed: String.fromCodePoint(0x2b1c), // white square (story remaining)
   fire: String.fromCodePoint(0x1f525), // streak
+  // Moon phases for the story bar: full = cleared, new = untouched, and the
+  // waning phases (lit from the left on major platforms) show how far into
+  // the cut-off story the run reached.
+  moonFull: String.fromCodePoint(0x1f315), // full moon
+  moonGibbous: String.fromCodePoint(0x1f316), // waning gibbous (~3/4)
+  moonHalf: String.fromCodePoint(0x1f317), // last quarter (~1/2)
+  moonCrescent: String.fromCodePoint(0x1f318), // waning crescent (~1/4)
+  moonNew: String.fromCodePoint(0x1f311), // new moon
 };
+
+/**
+ * The moon for the partially-typed story. Capped at waning gibbous - only a
+ * fully cleared story earns a full moon, no matter how close the cutoff was.
+ */
+function partialMoon(fraction: number): string {
+  if (fraction >= 0.625) return E.moonGibbous;
+  if (fraction >= 0.375) return E.moonHalf;
+  if (fraction >= 0.125) return E.moonCrescent;
+  return E.moonNew;
+}
 
 /** Which kind of device this browser is, for the share text's device tag. */
 export function detectDevice(): 'mobile' | 'desktop' {
@@ -54,7 +73,11 @@ export function buildShareText(data: ShareData): string {
   ];
   if (data.storyCount > 0) {
     const done = Math.max(0, Math.min(data.storiesCleared, data.storyCount));
-    const bar = E.cleared.repeat(done) + E.missed.repeat(data.storyCount - done);
+    let bar = E.moonFull.repeat(done);
+    if (done < data.storyCount) {
+      bar += partialMoon(Math.max(0, Math.min(1, data.currentStoryFraction ?? 0)));
+      bar += E.moonNew.repeat(data.storyCount - done - 1);
+    }
     lines.push(`${bar} ${done}/${data.storyCount}`);
   }
   if (!data.practice) lines.push(`${E.fire} Streak ${data.streak}`);

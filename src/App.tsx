@@ -176,6 +176,7 @@ export function App() {
           errors: result.errors,
           storiesCleared: result.storiesCleared,
           storyCount: result.storyCount,
+          storyFraction: result.currentStoryFraction,
           completedAt: new Date().toISOString(),
         };
         persist(recordOfficialResult(stateRef.current, official));
@@ -252,6 +253,7 @@ export function App() {
             storyCount: completedResult.storyCount || challenge.stories.length,
             storiesCleared: completedResult.storiesCleared,
             timedOut: (completedResult.storiesCleared || 0) < (completedResult.storyCount || 0),
+            currentStoryFraction: completedResult.storyFraction ?? 0,
             samples: [],
           });
           setPractice(false);

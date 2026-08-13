@@ -7,14 +7,14 @@
   <rect x="90" y="526" width="1020" height="3" fill="#14120d"/>
 
   <!-- two typewriter keys -->
-  <circle cx="180" cy="300" r="72" fill="#14120d"/>
-  <circle cx="180" cy="300" r="58" fill="none" stroke="#f3efe4" stroke-width="6"/>
-  <text x="180" y="325" text-anchor="middle" font-family="'Courier Prime','Courier New',monospace" font-weight="700" font-size="72" fill="#f3efe4">K</text>
-  <circle cx="290" cy="360" r="72" fill="#b3271f"/>
-  <circle cx="290" cy="360" r="58" fill="none" stroke="#f3efe4" stroke-width="6"/>
-  <text x="290" y="385" text-anchor="middle" font-family="'Courier Prime','Courier New',monospace" font-weight="700" font-size="72" fill="#fbf8f0">W</text>
+  <circle cx="180" cy="270" r="72" fill="#14120d"/>
+  <circle cx="180" cy="270" r="58" fill="none" stroke="#f3efe4" stroke-width="6"/>
+  <text x="180" y="295" text-anchor="middle" font-family="'Courier Prime','Courier New',monospace" font-weight="700" font-size="72" fill="#f3efe4">K</text>
+  <circle cx="290" cy="330" r="72" fill="#b3271f"/>
+  <circle cx="290" cy="330" r="58" fill="none" stroke="#f3efe4" stroke-width="6"/>
+  <text x="290" y="355" text-anchor="middle" font-family="'Courier Prime','Courier New',monospace" font-weight="700" font-size="72" fill="#fbf8f0">W</text>
 
-  <text x="430" y="330" font-family="'Bitter',Rockwell,Georgia,serif" font-weight="700" font-size="104" fill="#14120d">Keywulf</text>
-  <text x="434" y="398" font-family="'Courier Prime','Courier New',monospace" font-weight="700" font-size="34" letter-spacing="6" fill="#b3271f">DAILY NEWS TYPERACING.</text>
-  <text x="434" y="452" font-family="'Bitter',Rockwell,Georgia,serif" font-style="italic" font-size="26" fill="#6a6558">The day's news, in two minutes of typing.</text>
+  <text x="430" y="300" font-family="'Bitter',Rockwell,Georgia,serif" font-weight="700" font-size="104" fill="#14120d">Keywulf</text>
+  <text x="434" y="368" font-family="'Courier Prime','Courier New',monospace" font-weight="700" font-size="34" letter-spacing="6" fill="#b3271f">DAILY NEWS TYPERACING.</text>
+  <text x="434" y="422" font-family="'Bitter',Rockwell,Georgia,serif" font-style="italic" font-size="26" fill="#6a6558">The day's news, in two minutes of typing.</text>
 </svg>
