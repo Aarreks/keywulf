@@ -51,8 +51,9 @@ describe('buildShareText', () => {
     });
     expect(text).toContain(`${PHONE} 45 WPM (mobile) |`);
     expect(text).not.toContain(KEYS);
-    // Mobile gets the full URL so messaging apps auto-link it.
-    expect(text.endsWith('https://keywulf.com')).toBe(true);
+    // Mobile gets a full URL (apps auto-link it) with a per-game query so
+    // messaging apps scrape a fresh link preview instead of a cached one.
+    expect(text.endsWith('https://keywulf.com/?g=222')).toBe(true);
   });
 
   it('omits the device tag when unknown', () => {
