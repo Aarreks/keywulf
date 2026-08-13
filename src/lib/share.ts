@@ -85,7 +85,7 @@ export function buildShareText(data: ShareData): string {
   // The ?g= param makes each game's link a fresh preview-cache key: apps key
   // link previews on the page URL in the message, so a bare keywulf.com would
   // keep showing whatever card they scraped days ago.
-  lines.push(data.device === 'mobile' ? `https://keywulf.com/?g=${data.gameNumber}` : 'keywulf.com');
+  lines.push(data.device === 'mobile' ? `https://keywulf.com/g/${data.gameNumber}` : 'keywulf.com');
   return lines.join('\n');
 }
 

@@ -53,7 +53,7 @@ describe('buildShareText', () => {
     expect(text).not.toContain(KEYS);
     // Mobile gets a full URL (apps auto-link it) with a per-game query so
     // messaging apps scrape a fresh link preview instead of a cached one.
-    expect(text.endsWith('https://keywulf.com/?g=222')).toBe(true);
+    expect(text.endsWith('https://keywulf.com/g/222')).toBe(true);
   });
 
   it('omits the device tag when unknown', () => {
