@@ -82,9 +82,9 @@ export function buildShareText(data: ShareData): string {
   }
   if (!data.practice) lines.push(`${E.fire} Streak ${data.streak}`);
   // Mobile share sheets / messaging apps only reliably auto-link a full URL.
-  // The ?g= param makes each game's link a fresh preview-cache key: apps key
-  // link previews on the page URL in the message, so a bare keywulf.com would
-  // keep showing whatever card they scraped days ago.
+  // The /g/<game> path makes each game's link a fresh preview-cache key: apps
+  // key link previews on the page URL in the message, so a bare keywulf.com
+  // would keep showing whatever card they scraped days ago.
   lines.push(data.device === 'mobile' ? `https://keywulf.com/g/${data.gameNumber}` : 'keywulf.com');
   return lines.join('\n');
 }
