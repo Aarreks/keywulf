@@ -1,5 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { extractHtmlTitle, titleFromSlug } from './enrichSources';
+import { extractHtmlTitle, extractHtmlImage, titleFromSlug } from './enrichSources';
+
+describe('extractHtmlImage', () => {
+  it('reads reversed attributes, relative images and HTML entities', () => {
+    expect(extractHtmlImage(`<meta content="/photo.jpg?a=1&amp;b=2" property="og:image">
+      <meta property="og:image:alt" content="A street &amp; buildings">`, 'https://example.com/article'))
+      .toEqual({ imageUrl: 'https://example.com/photo.jpg?a=1&b=2', imageAlt: 'A street & buildings' });
+  });
+  it('prefers secure Open Graph images and supports Twitter fallback', () => {
+    expect(extractHtmlImage(`<meta property="og:image" content="http://example.com/a.jpg">
+      <meta property="og:image:secure_url" content="https://example.com/b.jpg">`, 'https://example.com'))
+      .toEqual({ imageUrl: 'https://example.com/b.jpg' });
+    expect(extractHtmlImage(`<meta name="twitter:image" content="https://example.com/c.jpg">`, 'https://example.com'))
+      .toEqual({ imageUrl: 'https://example.com/c.jpg' });
+  });
+  it('ignores missing images, logos, unsafe schemes and credentials', () => {
+    for (const image of ['http://example.com/a.jpg', 'javascript:alert(1)', 'data:image/png,abc',
+      'https://user:password@example.com/a.jpg', 'https://example.com/logo.png']) {
+      expect(extractHtmlImage(`<meta property="og:image" content="${image}">`, 'https://example.com')).toBeNull();
+    }
+    expect(extractHtmlImage('<title>No photo</title>', 'https://example.com')).toBeNull();
+  });
+});
 
 describe('extractHtmlTitle', () => {
   it('prefers og:title over <title>', () => {

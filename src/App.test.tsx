@@ -49,6 +49,32 @@ async function clickButton(label: string) {
 }
 
 describe('visitor flows', () => {
+  it('reveals only completed-story photos and hides failed images', async () => {
+    const challenge = parseChallenge(sample);
+    challenge.stories = challenge.stories.slice(0, 2).map((story, i) => ({
+      ...story, headline: 'A.', body: 'B.', photo: {
+        url: `https://images.example/${i}.jpg`, alt: `Photo ${i}`,
+        sourceUrl: 'https://publisher.example/article', sourceTitle: 'Original article',
+      },
+    }));
+    vi.mocked(fetchTodayChallenge).mockResolvedValue(challenge);
+    await renderApp();
+    await clickButton('Start');
+    expect(container.querySelector('.story-photos img')).toBeNull();
+    await act(async () => {
+      const input = container.querySelector('textarea')!;
+      input.value = 'A. B.';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+    });
+    await clickButton('Keywulf home');
+    await clickButton("Resume today's run");
+    const images = container.querySelectorAll('.story-photos img');
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute('src', 'https://images.example/0.jpg');
+    await act(async () => images[0].dispatchEvent(new Event('error')));
+    expect(container.querySelector('.story-photos')).toBeNull();
+    expect(container.querySelector('textarea')).not.toBeNull();
+  });
   it('saves navigation-away progress and preserves mistakes on resume and backspace', async () => {
     await renderApp();
     await clickButton('Start');

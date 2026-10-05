@@ -304,6 +304,43 @@
 }
 
 /* --------------------------------------------------------------- story tag */
+.story-photos {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+.story-photos__card {
+  flex: 0 0 160px;
+  margin: 0;
+}
+.story-photos__card a {
+  display: block;
+  color: var(--muted);
+  text-decoration: none;
+}
+.story-photos__card a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.story-photos__card img {
+  display: block;
+  width: 160px;
+  height: 100px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.story-photos__card figcaption {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .storytag {
   display: flex;
   align-items: center;

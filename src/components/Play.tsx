@@ -5,6 +5,7 @@ import { buildCorpus, buildStorySpans } from '../lib/challengeClient';
 import { computeScore, TIME_LIMIT_MS, type Score } from '../lib/scoring';
 import { RollingTracker } from '../lib/rolling';
 import type { InProgress, Settings } from '../lib/storage';
+import { StoryPhotos } from './StoryPhotos';
 
 export interface RunResult extends Score {
   correctChars: number;
@@ -542,6 +543,8 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
           </svg>
         </div>
       )}
+
+      <StoryPhotos stories={challenge.stories} completed={storyIdx} />
 
       <p className="sr-only" aria-live="polite">
         {hud.wpm} words per minute, {hud.acc.toFixed(0)} percent accuracy, {Math.round(hud.progress * 100)} percent

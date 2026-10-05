@@ -8,6 +8,16 @@ export interface ChallengeSource {
   title: string;
   /** Absolute URL. Never invented; comes from grounding metadata. */
   url: string;
+  /** Optional publisher-provided preview image, collected with the article title. */
+  imageUrl?: string;
+  imageAlt?: string;
+}
+
+export interface StoryPhoto {
+  url: string;
+  alt: string;
+  sourceUrl: string;
+  sourceTitle: string;
 }
 
 /** A single ranked story in the daily briefing. */
@@ -26,6 +36,8 @@ export interface Story {
   importance: number;
   /** Sources specific to this story, if attribution is reliable. May be empty. */
   sources: ChallengeSource[];
+  /** Best-effort photo from a closely matching source article; never typed. */
+  photo?: StoryPhoto;
 }
 
 /** The complete once-per-day shared challenge. */

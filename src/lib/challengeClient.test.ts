@@ -37,6 +37,18 @@ function makeChallenge(overrides: Partial<Challenge> = {}): Challenge {
 }
 
 describe('parseChallenge', () => {
+  it('keeps valid optional photos but ignores malformed metadata without breaking play', () => {
+    const challenge = makeChallenge();
+    const photo = { url: 'https://images.example/photo.jpg', alt: 'Article preview',
+      sourceUrl: 'https://publisher.example/article', sourceTitle: 'Original article' };
+    challenge.stories[0].photo = photo;
+    expect(parseChallenge(challenge).stories[0].photo).toEqual(photo);
+    for (const url of ['javascript:alert(1)', 'data:image/png,abc', 'http://images.example/photo.jpg']) {
+      challenge.stories[0].photo = { ...photo, url };
+      expect(parseChallenge(challenge).stories[0].photo).toBeUndefined();
+    }
+    expect(parseChallenge(makeChallenge()).stories[0].photo).toBeUndefined();
+  });
   it('accepts a well-formed challenge and sorts by rank', () => {
     const c = makeChallenge();
     const parsed = parseChallenge(JSON.parse(JSON.stringify(c)));

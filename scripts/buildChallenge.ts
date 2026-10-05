@@ -10,6 +10,8 @@ import { MIN_STORIES, MAX_WORDS } from './challengeSchema';
 export interface RawSource {
   title?: unknown;
   url?: unknown;
+  imageUrl?: unknown;
+  imageAlt?: unknown;
 }
 
 export interface RawStory {
@@ -49,7 +51,15 @@ function cleanSources(raw: unknown): ChallengeSource[] {
       continue;
     }
     const title = sanitizeText(typeof rs.title === 'string' ? rs.title : url) || url;
-    out.push({ title, url });
+    let imageUrl: string | undefined;
+    try {
+      const image = new URL(String(rs.imageUrl ?? ''));
+      if (image.protocol === 'https:' && !image.username && !image.password) imageUrl = image.href;
+    } catch { /* No usable preview image. */ }
+    out.push({ title, url, ...(imageUrl ? {
+      imageUrl,
+      ...(typeof rs.imageAlt === 'string' ? { imageAlt: rs.imageAlt.slice(0, 400) } : {}),
+    } : {}) });
   }
   return out;
 }

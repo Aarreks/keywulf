@@ -5,7 +5,7 @@
 // bundle. If anything looks wrong we throw and the UI shows a proper error
 // screen rather than a blank page.
 
-import type { Challenge, Story, ChallengeSource } from '../types';
+import type { Challenge, Story, ChallengeSource, StoryPhoto } from '../types';
 import { isTypeableSafe } from './sanitize';
 
 export class ChallengeError extends Error {
@@ -36,6 +36,20 @@ function isStory(v: unknown): v is Story {
     Array.isArray(s.sources) &&
     (s.sources as unknown[]).every(isSource)
   );
+}
+
+function parsePhoto(raw: unknown): StoryPhoto | undefined {
+  if (!raw || typeof raw !== 'object') return;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.url !== 'string' || typeof p.sourceUrl !== 'string' ||
+    typeof p.sourceTitle !== 'string' || typeof p.alt !== 'string') return;
+  try {
+    const image = new URL(p.url);
+    const source = new URL(p.sourceUrl);
+    if (image.protocol !== 'https:' || image.username || image.password ||
+      !['http:', 'https:'].includes(source.protocol) || source.username || source.password) return;
+    return { url: image.href, sourceUrl: source.href, sourceTitle: p.sourceTitle, alt: p.alt };
+  } catch { return; }
 }
 
 /** Parse and validate an unknown value into a Challenge, or throw. */
@@ -75,7 +89,7 @@ export function parseChallenge(raw: unknown): Challenge {
     date: c.date,
     gameNumber: c.gameNumber,
     title: typeof c.title === 'string' ? c.title : 'Daily Briefing',
-    stories: [...stories].sort((a, b) => a.rank - b.rank),
+    stories: stories.map((s) => ({ ...s, photo: parsePhoto(s.photo) })).sort((a, b) => a.rank - b.rank),
     sourcePool,
     wordCount: typeof c.wordCount === 'number' ? c.wordCount : 0,
     generatedAt: typeof c.generatedAt === 'string' ? c.generatedAt : '',

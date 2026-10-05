@@ -10,6 +10,8 @@
 export interface SourceRef {
   title: string;
   url: string;
+  imageUrl?: string;
+  imageAlt?: string;
 }
 
 const UA =
@@ -45,6 +47,31 @@ export function extractHtmlTitle(html: string): string | null {
   if (!raw) return null;
   const clean = decodeEntities(raw).replace(/\s+/g, ' ').trim();
   return clean.length >= 3 ? clean.slice(0, MAX_TITLE_CHARS) : null;
+}
+
+/** Read publisher preview metadata, resolving relative URLs against the article. */
+export function extractHtmlImage(html: string, pageUrl: string): { imageUrl: string; imageAlt?: string } | null {
+  const meta = new Map<string, string>();
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const attrs = new Map<string, string>();
+    for (const attr of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+      attrs.set(attr[1].toLowerCase(), decodeEntities(attr[2] ?? attr[3]));
+    }
+    const key = (attrs.get('property') ?? attrs.get('name'))?.toLowerCase();
+    if (key && attrs.has('content') && !meta.has(key)) meta.set(key, attrs.get('content')!);
+  }
+  for (const key of ['og:image:secure_url', 'og:image', 'og:image:url', 'twitter:image']) {
+    const raw = meta.get(key)?.trim();
+    if (!raw) continue;
+    try {
+      const url = new URL(raw, pageUrl);
+      if (url.protocol !== 'https:' || url.username || url.password) continue;
+      if (/logo|favicon|placeholder|sprite/i.test(url.pathname)) continue;
+      const alt = meta.get(key.startsWith('og:') ? 'og:image:alt' : 'twitter:image:alt')?.trim();
+      return { imageUrl: url.href, ...(alt ? { imageAlt: alt.slice(0, 400) } : {}) };
+    } catch { /* Optional metadata must never prevent publication. */ }
+  }
+  return null;
 }
 
 /** Derive a readable label from a URL slug: ".../colombia-earthquake-toll" ->
@@ -111,12 +138,15 @@ export async function resolveSource(src: SourceRef, timeoutMs = 8000): Promise<S
     });
     const finalUrl = res.url || src.url;
     let title: string | null = null;
+    let image: ReturnType<typeof extractHtmlImage> = null;
     const type = res.headers.get('content-type') ?? '';
     if (res.ok && type.includes('html')) {
-      title = extractHtmlTitle(await readCapped(res, MAX_HTML_BYTES));
+      const html = await readCapped(res, MAX_HTML_BYTES);
+      title = extractHtmlTitle(html);
+      image = extractHtmlImage(html, finalUrl);
     }
     title = title ?? titleFromSlug(finalUrl) ?? src.title;
-    return { title, url: finalUrl };
+    return { title, url: finalUrl, ...image };
   } catch {
     return src;
   } finally {

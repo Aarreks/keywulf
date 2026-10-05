@@ -20,6 +20,8 @@ export const MAX_BODY_CHARS = 160;
 const sourceSchema = z.object({
   title: z.string().min(1).max(200),
   url: z.string().url(),
+  imageUrl: z.string().url().startsWith('https://').optional(),
+  imageAlt: z.string().max(400).optional(),
 });
 
 const storySchema = z.object({
@@ -30,6 +32,12 @@ const storySchema = z.object({
   regions: z.array(z.string().min(1).max(40)).min(1),
   importance: z.number().min(0).max(100),
   sources: z.array(sourceSchema),
+  photo: z.object({
+    url: z.string().url().startsWith('https://'),
+    alt: z.string().max(400),
+    sourceUrl: z.string().url(),
+    sourceTitle: z.string().min(1).max(200),
+  }).optional(),
 });
 
 export const challengeSchema = z.object({

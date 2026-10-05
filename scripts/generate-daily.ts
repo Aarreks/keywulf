@@ -28,6 +28,7 @@ import { todayUtc } from '../src/lib/gameNumber';
 import { SYSTEM_INSTRUCTION, researchPrompt, formatPrompt } from './prompts';
 import { enrichSources } from './enrichSources';
 import { refineTitles } from './refineTitles';
+import { attachStoryPhotos } from './storyPhotos';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -210,14 +211,14 @@ async function main(): Promise<void> {
       if (!text) throw new Error('Empty model response');
       const model = extractJson(text);
 
-      const challenge = assembleChallenge({
+      const challenge = attachStoryPhotos(assembleChallenge({
         date: DATE,
         model: MODEL,
         generatedAt: new Date().toISOString(),
         title: model.title,
         stories: model.stories,
         groundingSources: sources,
-      });
+      }));
 
       validateChallenge(challenge);
 

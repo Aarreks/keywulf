@@ -7,7 +7,8 @@ and types it as a typing test. Wordle-style daily identity; typing-game feel.
 - **Live text**: today's news, deduplicated and ranked by global significance.
 - **Zero per-visitor cost**: AI runs once per day (GitHub Actions). Visitors get
   static HTML/CSS/JS + one static `today.json`. No database, no auth, no server
-  calls during normal play.
+  generation API calls during normal play. Optional article photos load from
+  their publishers after you type each story.
 - **All the "dynamic" is client-side**: the performance-reactive color system,
   live WPM/accuracy/telemetry, and animations are computed in the browser.
 
@@ -34,6 +35,10 @@ Once/day (GitHub Actions)                 Every visitor (Cloudflare edge)
   `today.json` always revalidated so nobody is stuck on yesterday's puzzle).
 - **Daily identity**: `gameNumber` is derived deterministically from a documented
   UTC epoch (`src/lib/gameNumber.ts`), so no server counter is needed.
+- **Story photos**: the daily job collects article preview images in the same
+  requests used to resolve source titles. Only closely matching sources are
+  used; unavailable photos are skipped. Photos reveal below the passage as
+  stories are typed, link to their publisher, and never affect the typed text.
 
 ## Local development (Windows)
 

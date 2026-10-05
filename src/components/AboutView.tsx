@@ -18,7 +18,7 @@ export function AboutView() {
           <li>Stories are ordered by broad global significance - people affected, geopolitical and economic consequence, safety, elections, disasters, health, science, and climate - not by social-media attention or US media volume.</li>
           <li>The result is a terse briefing of roughly 12-16 headlines, each with a single sentence: wire-service compression, with the occasional dry aside.</li>
           <li>The clock stops at 2:00, or earlier if you clear the whole briefing.</li>
-          <li>The sources used are exposed after you finish, never inside the text you type.</li>
+          <li>Article photos may appear after you type each story, with links to their publishers. The full sources list is available after you finish, never inside the text you type.</li>
         </ul>
 
         <h2>Why the text is always easy to type</h2>

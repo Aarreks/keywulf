@@ -6,6 +6,7 @@ import { buildShareText, shareOrCopy, detectDevice } from '../lib/share';
 import { ShareIcon, CheckIcon } from './icons';
 import { RunGraph } from './RunGraph';
 import { Sources } from './Sources';
+import { StoryPhotos } from './StoryPhotos';
 
 interface Props {
   challenge: Challenge;
@@ -87,6 +88,8 @@ export function Result({
       </div>
 
       <RunGraph samples={result.samples} />
+
+      <StoryPhotos stories={challenge.stories} completed={result.storiesCleared} />
 
       <div className="statgrid tnum">
         <Cell label="Accuracy" value={`${formatAccuracyPct(result.accuracy)}%`} good />

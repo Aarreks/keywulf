@@ -135,8 +135,8 @@ export async function refineTitles(
       // Exact structural check: keep / prefix-trim / slug recase only.
       isVerifiedEdit(proposed, src.title, src.url)
     ) {
-      return { title: proposed.trim(), url: src.url };
+      return { ...src, title: proposed.trim() };
     }
-    return { title: fallbackTitle(src), url: src.url };
+    return { ...src, title: fallbackTitle(src) };
   });
 }
