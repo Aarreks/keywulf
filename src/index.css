@@ -230,10 +230,24 @@ h3 {
   align-items: center;
   justify-content: space-between;
 }
-.footer a {
+.footer a,
+.footer__nav {
   color: var(--muted);
 }
-.footer a:hover {
+.footer__nav {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.footer__nav:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.footer a:hover,
+.footer__nav:hover {
   color: var(--ink);
 }
 .footer a.footer__credit {

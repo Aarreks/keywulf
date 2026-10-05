@@ -146,6 +146,20 @@ describe('pruneResults', () => {
 });
 
 describe('migrate', () => {
+  it('preserves valid character correctness and accepts legacy snapshots', () => {
+    const snapshot = {
+      date: '2026-08-09', gameNumber: 221, typedCount: 2,
+      correctKeystrokes: 1, incorrectKeystrokes: 1, elapsedMs: 10_000, updatedAt: 'x',
+    };
+    expect(migrate({ inProgress: { ...snapshot, characterStatuses: [1, 2] } })
+      .inProgress?.characterStatuses).toEqual([1, 2]);
+    expect(migrate({ inProgress: snapshot }).inProgress?.typedCount).toBe(2);
+    for (const invalid of [[1], [1, 0], [1, '2']]) {
+      expect(migrate({ inProgress: { ...snapshot, characterStatuses: invalid } })
+        .inProgress?.characterStatuses).toBeUndefined();
+    }
+  });
+
   it('returns a clean default for junk input', () => {
     expect(migrate(null).schemaVersion).toBe(SCHEMA_VERSION);
     expect(migrate('nope').results).toEqual({});

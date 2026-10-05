@@ -90,13 +90,27 @@ and a "reduced intensity" setting are respected.
 
 ## Deployment
 
-Full step-by-step setup (GitHub, Gemini, Cloudflare, DNS for `keywulf.com`) lives
-in `DEPLOY.md`. CI (`.github/workflows/ci.yml`) runs on every push/PR using the
+CI (`.github/workflows/ci.yml`) runs on every push/PR using the
 sample fixture. The daily job (`.github/workflows/daily.yml`) generates + deploys
 at 00:05 UTC (with a 00:30 no-op-if-fresh safety retry; live by 01:00 UTC) and is
 also runnable on demand.
 
 Secrets required: `GEMINI_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+
+Add these under the repository's **Settings → Secrets and variables → Actions**.
+The Cloudflare token must allow deploying the `keywulf` Worker in the supplied
+account. Hosting configuration is in `wrangler.toml`; connect `keywulf.com` to
+that Worker in Cloudflare.
+
+To change the generation model without editing code, set the Actions repository
+variable `GEMINI_MODEL` to a Gemini model that supports Google Search grounding.
+The default is set in `scripts/generate-daily.ts`. For local generation, export
+the environment variables as shown above; copying `.env.example` to `.env`
+alone does not load them into the script.
+
+After setup, use **Actions → Daily challenge → Run workflow** to generate and
+deploy a briefing. Leave the date blank for today. A manual run regenerates the
+briefing even if today's puzzle is already live, so use it deliberately.
 
 ### Scheduled workflow maintenance
 

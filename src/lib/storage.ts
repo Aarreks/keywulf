@@ -54,6 +54,8 @@ export interface InProgress {
   gameNumber: number;
   /** Number of characters already typed into the corpus. */
   typedCount: number;
+  /** Per-position correctness (1 = correct, 2 = incorrect); absent in older saves. */
+  characterStatuses?: number[];
   correctKeystrokes: number;
   incorrectKeystrokes: number;
   /** Accumulated elapsed time in ms (persisted, not wall-clock across reload). */
@@ -190,10 +192,17 @@ function coerceInProgress(val: unknown): InProgress | null {
   const v = val as Record<string, unknown>;
   if (typeof v.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.date)) return null;
   const num = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
+  const typedCount = num(v.typedCount);
+  const characterStatuses = Array.isArray(v.characterStatuses) &&
+    v.characterStatuses.length === typedCount &&
+    v.characterStatuses.every((status) => status === 1 || status === 2)
+    ? v.characterStatuses as number[]
+    : undefined;
   return {
     date: v.date,
     gameNumber: num(v.gameNumber),
-    typedCount: num(v.typedCount),
+    typedCount,
+    characterStatuses,
     correctKeystrokes: num(v.correctKeystrokes),
     incorrectKeystrokes: num(v.incorrectKeystrokes),
     elapsedMs: num(v.elapsedMs),

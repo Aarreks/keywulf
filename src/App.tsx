@@ -194,6 +194,7 @@ export function App() {
   );
 
   const goHome = useCallback(() => setPhase('home'), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   // --- Render ---
   const currentStreak = stats.current;
@@ -292,15 +293,15 @@ export function App() {
       <div className="container">
         <footer className="footer">
           <span>
-            Keywulf &middot; <a onClick={goHome} style={{ cursor: 'pointer' }}>Daily news typeracing</a>
+            Keywulf &middot; <button className="footer__nav" onClick={goHome}>Daily news typeracing</button>
           </span>
           <span style={{ display: 'inline-flex', gap: 18 }}>
-            <a onClick={() => setPhase('about')} style={{ cursor: 'pointer' }}>
+            <button className="footer__nav" onClick={() => setPhase('about')}>
               About
-            </a>
-            <a onClick={() => setPhase('stats')} style={{ cursor: 'pointer' }}>
+            </button>
+            <button className="footer__nav" onClick={() => setPhase('stats')}>
               Stats
-            </a>
+            </button>
             <a
               className="footer__credit"
               href="https://phosfox.us"
@@ -317,7 +318,7 @@ export function App() {
         <SettingsDialog
           settings={state.settings}
           onChange={onSettingsChange}
-          onClose={() => setSettingsOpen(false)}
+          onClose={closeSettings}
         />
       )}
     </div>

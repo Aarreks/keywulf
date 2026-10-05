@@ -369,6 +369,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
           lastSnapRef.current = now;
           onSnapshot({
             typedCount: idxRef.current,
+            characterStatuses: Array.from(statusRef.current.slice(0, idxRef.current)),
             correctKeystrokes: correctKsRef.current,
             incorrectKeystrokes: incorrectKsRef.current,
             elapsedMs: el,
@@ -388,14 +389,21 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   useEffect(() => {
     if (resume && resume.typedCount > 0 && resume.typedCount <= chars.length) {
       idxRef.current = resume.typedCount;
-      for (let k = 0; k < resume.typedCount; k++) statusRef.current[k] = 1;
-      correctPosRef.current = resume.typedCount;
+      correctPosRef.current = 0;
+      for (let k = 0; k < resume.typedCount; k++) {
+        // Older saves lack per-position data; preserve their previous behavior.
+        const status = resume.characterStatuses?.[k] ?? 1;
+        statusRef.current[k] = status;
+        if (status === 1) correctPosRef.current += 1;
+      }
       correctKsRef.current = resume.correctKeystrokes;
       incorrectKsRef.current = resume.incorrectKeystrokes;
       elapsedBaseRef.current = resume.elapsedMs;
       // Reflect resumed characters visually + keep the input diff consistent.
       for (let k = 0; k < resume.typedCount; k++) {
-        spanRefs.current[k]?.classList.add('correct');
+        const span = spanRefs.current[k];
+        span?.classList.add(statusRef.current[k] === 1 ? 'correct' : 'incorrect');
+        if (statusRef.current[k] === 2 && chars[k] === ' ') span?.classList.add('sp');
       }
       if (inputRef.current) {
         inputRef.current.value = corpus.slice(0, resume.typedCount);
@@ -424,18 +432,23 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     // Recompute caret on resize.
     const onResize = () => positionCaret();
     window.addEventListener('resize', onResize);
-    const onVis = () => {
-      if (document.visibilityState === 'hidden' && startedRef.current && !completedRef.current) {
+    const saveSnapshot = () => {
+      if ((startedRef.current || resume) && !completedRef.current) {
         onSnapshot({
           typedCount: idxRef.current,
+          characterStatuses: Array.from(statusRef.current.slice(0, idxRef.current)),
           correctKeystrokes: correctKsRef.current,
           incorrectKeystrokes: incorrectKsRef.current,
           elapsedMs: elapsedMs(nowMs()),
         });
       }
     };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') saveSnapshot();
+    };
     document.addEventListener('visibilitychange', onVis);
     return () => {
+      saveSnapshot();
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVis);
     };
@@ -499,10 +512,6 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
           className="capture"
           onInput={onInput}
           onPaste={onPaste}
-          onBlur={() => {
-            // Keep the keyboard/engine attached unless we're done.
-            if (!completedRef.current) setTimeout(focusInput, 0);
-          }}
           aria-label="Typing input. Type the briefing shown above."
           autoCapitalize="none"
           autoCorrect="off"

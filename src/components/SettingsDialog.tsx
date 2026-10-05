@@ -12,12 +12,32 @@ export function SettingsDialog({ settings, onChange, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+      if (e.key === 'Tab') {
+        const buttons = ref.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+        if (!buttons?.length) return;
+        const first = buttons[0];
+        const last = buttons[buttons.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
     ref.current?.querySelector<HTMLElement>('button, [tabindex]')?.focus();
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
   }, [onClose]);
 
   const haptorsSupported =
