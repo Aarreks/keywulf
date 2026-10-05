@@ -98,6 +98,14 @@ also runnable on demand.
 
 Secrets required: `GEMINI_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 
+### Scheduled workflow maintenance
+
+GitHub automatically disables scheduled workflows in public repositories after
+60 days without repository activity. Keep this repository active with regular
+maintenance commits. If the daily schedule is disabled, open **Actions → Daily
+challenge → Enable workflow** to resume it. See [GitHub's workflow maintenance
+guidance](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+
 ## License
 
 MIT
