@@ -16,7 +16,7 @@ and types it as a typing test. Wordle-style daily identity; typing-game feel.
 ## Architecture
 
 ```
-Cloudflare preparation (starts 23:05 UTC)
+Cloudflare preparation (00:20, 00:30, 00:40, 00:50 UTC)
   Gemini + Google Search → sanitize + validate → stored immutable briefing
 
 Cloudflare serving (server clock, no cron required for the switchover)
@@ -32,8 +32,8 @@ GitHub Actions → validate + build + deploy app code independently
   hard-validated. Research uses the actual current date even when preparing
   tomorrow's game. The local CLI remains `npm run generate:daily`.
 - **Publication** (`worker/index.ts`): a SQLite-backed Durable Object stores one
-  immutable text per date. Preparation starts at 23:05 UTC, almost two hours
-  before release. Cloudflare retries every 30 minutes, skipping the model when
+  immutable text per date. Cloudflare attempts preparation at 00:20, 00:30,
+  00:40 and 00:50 UTC, skipping the model when
   a briefing is ready. Generation leases prevent concurrent duplicate calls.
   At exactly 01:00 UTC, requests select the new date by server clock. No job
   needs to start and no app deployment needs to finish at that moment. Idle

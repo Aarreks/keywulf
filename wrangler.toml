@@ -27,7 +27,6 @@ tag = "daily-publication-v1"
 new_sqlite_classes = ["DailyBriefing"]
 
 [triggers]
-# At 23:05 prepare the next UTC date. Retries before 01:00 give the model
-# almost two hours; later retries recover from a genuine generation failure.
+# Prepare the current UTC date at 00:20, 00:30, 00:40 and 00:50 UTC.
 # Already prepared dates return immediately without another model call.
-crons = ["5,35 * * * *"]
+crons = ["20,30,40,50 0 * * *"]

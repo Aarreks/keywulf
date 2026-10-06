@@ -14,11 +14,9 @@ export function nextPublicationTime(now: number = Date.now()): number {
 }
 
 export function preparationDate(now: number): string {
-  // Start preparing the next briefing at 23:00 UTC, two hours before release.
-  // At other times, retries target the current UTC date. Before 01:00 that is
-  // the upcoming briefing; after 01:00 it is a genuinely late generation.
-  return new Date(now + (new Date(now).getUTCHours() >= 23 ? DAY : 0))
-    .toISOString().slice(0, 10);
+  // The four preparation attempts run after midnight, before 01:00 UTC, and
+  // all target the same upcoming game date. Manual recovery uses this date too.
+  return new Date(now).toISOString().slice(0, 10);
 }
 
 export function publicationTime(date: string): number {

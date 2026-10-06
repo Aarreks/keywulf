@@ -11,10 +11,13 @@ describe('01:00 UTC publication', () => {
     expect(activeChallengeDate(time('2027-01-01T01:00:00Z'))).toBe('2027-01-01');
   });
 
-  it('prepares tomorrow at 23:00, then retries that same date across midnight', () => {
-    expect(preparationDate(time('2026-10-05T23:05:00Z'))).toBe('2026-10-06');
-    expect(preparationDate(time('2026-10-06T00:35:00Z'))).toBe('2026-10-06');
-    expect(preparationDate(time('2026-10-06T02:05:00Z'))).toBe('2026-10-06');
+  it('targets the same upcoming date for all four attempts before release', () => {
+    for (const minute of [20, 30, 40, 50]) {
+      const now = time(`2026-10-06T00:${minute}:00Z`);
+      expect(preparationDate(now)).toBe('2026-10-06');
+      expect(activeChallengeDate(now)).toBe('2026-10-05');
+    }
+    expect(preparationDate(time('2027-01-01T00:20:00Z'))).toBe('2027-01-01');
   });
 
   it('counts down to the same release time as the server', () => {

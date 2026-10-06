@@ -41,7 +41,7 @@ const admin = (action: string, date: string, body?: unknown) => worker.fetch(new
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-10-05T23:05:00Z'));
+  vi.setSystemTime(new Date('2026-10-06T00:20:00Z'));
   vi.mocked(generateBriefing).mockReset();
   objects = new Map();
   env = {
@@ -78,7 +78,7 @@ describe('daily publication', () => {
   it('prepares ahead once, then makes retries and redeploys idempotent', async () => {
     vi.mocked(generateBriefing).mockResolvedValue(challenge('2026-10-06'));
     await worker.scheduled({ scheduledTime: Date.now() }, env);
-    vi.setSystemTime(new Date('2026-10-06T00:35:00Z'));
+    vi.setSystemTime(new Date('2026-10-06T00:30:00Z'));
     await worker.scheduled({ scheduledTime: Date.now() }, env);
     await admin('seed', '2026-10-06', challenge('2026-10-06', 'Replacement'));
     vi.setSystemTime(new Date('2026-10-06T01:00:00Z'));
