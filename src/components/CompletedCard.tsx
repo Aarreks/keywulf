@@ -15,8 +15,8 @@ interface Props {
 }
 
 /**
- * The publish cutoff is 01:00 UTC (the daily job is scheduled at 00:05 with a 00:30
- * safety retry). Returns the cutoff formatted in the player's local time, plus
+ * The publication target is 01:00 UTC (the daily job is scheduled at 00:05 with
+ * a 00:30 retry). Returns the target formatted in the player's local time, plus
  * a countdown that re-renders every 30s while the card is on screen.
  */
 function useNextBriefing() {
@@ -89,7 +89,7 @@ export function CompletedCard({ challenge, result, streak, onViewResult, onPract
       </div>
 
       <p className="start__hint">
-        The next briefing arrives by 01:00 UTC
+        We aim to publish the next briefing by 01:00 UTC
         {next.showLocal ? ` (${next.localTime} your time)` : ''} - in{' '}
         <span className="tnum">{next.countdown}</span>. Your streak continues if you play each day.
       </p>

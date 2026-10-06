@@ -96,8 +96,12 @@ and a "reduced intensity" setting are respected.
 ## Deployment
 
 CI (`.github/workflows/ci.yml`) runs on every push/PR using the
-sample fixture. The daily job (`.github/workflows/daily.yml`) generates + deploys
-at 00:05 UTC (with a 00:30 no-op-if-fresh safety retry; live by 01:00 UTC) and is
+sample fixture. The daily job (`.github/workflows/daily.yml`) is scheduled at
+00:05 UTC with a 00:30 retry, targeting publication by 01:00 UTC. GitHub can
+delay or drop scheduled runs, so this is not a guaranteed deadline. Every run
+builds and deploys the app; a fresh briefing skips only generation and reuses
+the exact live challenge. Pushes to `main` also deploy code changes using the
+live briefing, without calling Gemini or replacing players' text. The job is
 also runnable on demand.
 
 Secrets required: `GEMINI_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.

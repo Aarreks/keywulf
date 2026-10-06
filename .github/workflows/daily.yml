@@ -4,12 +4,13 @@ name: Daily challenge
 # Search), validates it hard, builds, and deploys to Cloudflare Workers Static
 # Assets. Runs ONCE per day for the entire world - never per visitor.
 #
-# PUBLISH CUTOFF: the product promises the new briefing is live by 01:00 UTC.
-# GitHub cron is best-effort (runs often start minutes-to-tens-of-minutes late),
-# so two staggered attempts provide the buffer: a primary at 00:05 and a safety
-# retry at 00:30. The retry checks the LIVE site first and exits as a no-op if
-# today's puzzle is already published - a second generation for the same date
-# must never replace text players are already typing.
+# Target publication time is 01:00 UTC. GitHub cron is best-effort and can be
+# delayed or dropped, so this is a target rather than a guaranteed deadline.
+# The primary at 00:05 and retry at 00:30 generate only when today's briefing
+# is missing. Every run still builds and deploys the app; when generation is
+# skipped, reuse the LIVE briefing so players' text never changes mid-day.
+# Pushes to main also deploy the app, reusing the live briefing without calling
+# Gemini. Code fixes must not wait for the next scheduled news generation.
 # Also runnable on demand via "Run workflow" (workflow_dispatch), which always
 # regenerates (no freshness skip).
 #
@@ -18,9 +19,11 @@ name: Daily challenge
 # puzzle already live on Cloudflare.
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '5 0 * * *' # primary attempt (00:05 UTC)
-    - cron: '30 0 * * *' # safety retry; no-op if today's puzzle is already live
+    - cron: '30 0 * * *' # retry; reuse today's puzzle if already published
   workflow_dispatch:
     inputs:
       date:
@@ -40,57 +43,67 @@ jobs:
   generate-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # Scheduled runs only: if the live site already serves today's puzzle
-      # (the earlier attempt succeeded), exit as a successful no-op. Manual
-      # dispatches skip this check so a bad day can always be regenerated.
+      # Freshness controls generation only, never building or deploying code.
+      # Fail if the live date cannot be read: an HTTP error must not cause a
+      # second generation that replaces a briefing people are already typing.
       - name: Check whether today's puzzle is already live
         id: fresh
         if: github.event_name == 'schedule'
         run: |
-          LIVE=$(curl -s --max-time 20 "https://keywulf.com/data/today.json?v=$(date +%s)" | grep -o '"date": *"[0-9-]*"' | head -1 | grep -o '[0-9-]\{10\}' || true)
+          curl --fail --silent --show-error --retry 3 --max-time 20 \
+            "https://keywulf.com/data/today.json?v=$(date +%s)" \
+            --output "$RUNNER_TEMP/keywulf-live.json"
+          LIVE=$(node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/keywulf-live.json", "utf8")); if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date)) throw new Error("Invalid live briefing date"); console.log(data.date);')
           TODAY=$(date -u +%F)
           echo "live=$LIVE today=$TODAY"
           if [ "$LIVE" = "$TODAY" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Today's puzzle is already live; nothing to do."
+            echo "Today's puzzle is already live; reuse it and redeploy the app."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v4
-        if: steps.fresh.outputs.skip != 'true'
 
       - uses: actions/setup-node@v4
-        if: steps.fresh.outputs.skip != 'true'
         with:
           node-version: 20
           cache: npm
 
       - run: npm ci
-        if: steps.fresh.outputs.skip != 'true'
+
+      - name: Preserve the live briefing when deploying code
+        if: github.event_name == 'push' || steps.fresh.outputs.skip == 'true'
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            cp "$RUNNER_TEMP/keywulf-live.json" public/data/today.json
+          else
+            curl --fail --silent --show-error --retry 3 --max-time 20 \
+              "https://keywulf.com/data/today.json?v=$(date +%s)" \
+              --output public/data/today.json
+          fi
 
       - name: Generate today's challenge (Gemini + Google Search grounding)
-        if: steps.fresh.outputs.skip != 'true'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && steps.fresh.outputs.skip != 'true')
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           KEYWULF_DATE: ${{ github.event.inputs.date }}
         run: npm run generate:daily
 
-      - name: Validate the generated challenge
-        if: steps.fresh.outputs.skip != 'true'
+      - name: Validate the briefing before deployment
         run: npm run validate:challenge
 
       - name: Unit tests
-        if: steps.fresh.outputs.skip != 'true'
         run: npm test
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build static site
-        if: steps.fresh.outputs.skip != 'true'
         run: npm run build
 
       - name: Deploy to Cloudflare Workers Static Assets
-        if: steps.fresh.outputs.skip != 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
