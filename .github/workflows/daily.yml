@@ -1,37 +1,12 @@
-name: Daily challenge
+name: Deploy app
 
-# Generates the shared daily Keywulf challenge with Gemini (grounded by Google
-# Search), validates it hard, builds, and deploys to Cloudflare Workers Static
-# Assets. Runs ONCE per day for the entire world - never per visitor.
-#
-# Target publication time is 01:00 UTC. GitHub cron is best-effort and can be
-# delayed or dropped, so this is a target rather than a guaranteed deadline.
-# The primary at 00:05 and retry at 00:30 generate only when today's briefing
-# is missing. Every run still builds and deploys the app; when generation is
-# skipped, reuse the LIVE briefing so players' text never changes mid-day.
-# Pushes to main also deploy the app, reusing the live briefing without calling
-# Gemini. Code fixes must not wait for the next scheduled news generation.
-# Also runnable on demand via "Run workflow" (workflow_dispatch), which always
-# regenerates (no freshness skip).
-#
-# If ANY step fails (generation, validation, tests, build, deploy) the job fails
-# loudly and does NOT deploy, so a broken day never replaces the last good
-# puzzle already live on Cloudflare.
-
+# GitHub deploys code only. Cloudflare prepares daily news independently and
+# selects the correct stored briefing at 01:00 UTC by its server clock.
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '5 0 * * *' # primary attempt (00:05 UTC)
-    - cron: '30 0 * * *' # retry; reuse today's puzzle if already published
   workflow_dispatch:
-    inputs:
-      date:
-        description: 'Override challenge date (YYYY-MM-DD, UTC). Leave blank for today.'
-        required: false
-        default: ''
 
-# Never let two deploys race each other.
 concurrency:
   group: keywulf-deploy
   cancel-in-progress: false
@@ -40,72 +15,44 @@ permissions:
   contents: read
 
 jobs:
-  generate-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      # Freshness controls generation only, never building or deploying code.
-      # Fail if the live date cannot be read: an HTTP error must not cause a
-      # second generation that replaces a briefing people are already typing.
-      - name: Check whether today's puzzle is already live
-        id: fresh
-        if: github.event_name == 'schedule'
-        run: |
-          curl --fail --silent --show-error --retry 3 --max-time 20 \
-            "https://keywulf.com/data/today.json?v=$(date +%s)" \
-            --output "$RUNNER_TEMP/keywulf-live.json"
-          LIVE=$(node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/keywulf-live.json", "utf8")); if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date)) throw new Error("Invalid live briefing date"); console.log(data.date);')
-          TODAY=$(date -u +%F)
-          echo "live=$LIVE today=$TODAY"
-          if [ "$LIVE" = "$TODAY" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Today's puzzle is already live; reuse it and redeploy the app."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-
       - run: npm ci
 
-      - name: Preserve the live briefing when deploying code
-        if: github.event_name == 'push' || steps.fresh.outputs.skip == 'true'
+      - name: Preserve the exact live briefing for migration
+        id: live
         run: |
-          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+          if curl --fail --silent --show-error --retry 3 --max-time 20 \
+            "https://keywulf.com/data/today.json?v=$(date +%s)" \
+            --output "$RUNNER_TEMP/keywulf-live.json"; then
             cp "$RUNNER_TEMP/keywulf-live.json" public/data/today.json
+            echo "preserved=true" >> "$GITHUB_OUTPUT"
           else
-            curl --fail --silent --show-error --retry 3 --max-time 20 \
-              "https://keywulf.com/data/today.json?v=$(date +%s)" \
-              --output public/data/today.json
+            echo "preserved=false" >> "$GITHUB_OUTPUT"
+            echo "Live briefing unavailable; deploy code without seeding a fixture."
           fi
 
-      - name: Generate today's challenge (Gemini + Google Search grounding)
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && steps.fresh.outputs.skip != 'true')
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-          KEYWULF_DATE: ${{ github.event.inputs.date }}
-        run: npm run generate:daily
-
-      - name: Validate the briefing before deployment
+      - name: Validate the preserved briefing
         run: npm run validate:challenge
-
       - name: Unit tests
         run: npm test
-
       - name: Lint
         run: npm run lint
-
-      - name: Build static site
+      - name: Build the app
         run: npm run build
-
-      - name: Deploy to Cloudflare Workers Static Assets
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+      - name: Validate the Worker build
+        run: npx wrangler deploy --dry-run
+      - name: Deploy and verify daily publication
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          KEYWULF_MIGRATE_LIVE: ${{ steps.live.outputs.preserved }}
+        run: node scripts/deploy-cloudflare.mjs

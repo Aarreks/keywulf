@@ -16,6 +16,7 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.setSystemTime(new Date(`${sample.date}T12:00:00Z`));
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
   vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -23,6 +24,7 @@ beforeEach(() => {
     matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   })));
   localStorage.clear();
+  vi.mocked(fetchTodayChallenge).mockReset();
   vi.mocked(fetchTodayChallenge).mockResolvedValue(parseChallenge(sample));
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -49,6 +51,33 @@ async function clickButton(label: string) {
 }
 
 describe('visitor flows', () => {
+  it('refreshes an idle tab at 01:00 UTC without showing a sample on failure', async () => {
+    vi.setSystemTime(new Date(`${sample.date}T00:59:59Z`));
+    await renderApp();
+    expect(fetchTodayChallenge).toHaveBeenCalledTimes(1);
+    vi.mocked(fetchTodayChallenge).mockRejectedValue(new Error('Fresh news is still being prepared'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(fetchTodayChallenge).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('Fresh news is still being prepared');
+    expect(container.querySelector('.start__actions')).toBeNull();
+    expect(localStorage.getItem('keywulf')).toBeNull();
+  });
+
+  it('keeps an active corpus at rollover and loads the new briefing on returning home', async () => {
+    vi.setSystemTime(new Date(`${sample.date}T00:59:59Z`));
+    const previous = parseChallenge(sample);
+    // The old day's corpus is still correct before the 01:00 release.
+    previous.date = new Date(Date.parse(`${sample.date}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+    vi.mocked(fetchTodayChallenge).mockResolvedValueOnce(previous).mockResolvedValue(parseChallenge(sample));
+    await renderApp();
+    await clickButton('Start');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(fetchTodayChallenge).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('textarea')).not.toBeNull();
+    await clickButton('Keywulf home');
+    expect(fetchTodayChallenge).toHaveBeenCalledTimes(2);
+  });
+
   it('reveals only completed-story photos and hides failed images', async () => {
     const challenge = parseChallenge(sample);
     challenge.stories = challenge.stories.slice(0, 2).map((story, i) => ({

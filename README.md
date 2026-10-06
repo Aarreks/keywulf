@@ -5,34 +5,45 @@ Everyone on Earth gets the same briefing, in the same order, on the same UTC day
 and types it as a typing test. Wordle-style daily identity; typing-game feel.
 
 - **Live text**: today's news, deduplicated and ranked by global significance.
-- **Zero per-visitor cost**: AI runs once per day (GitHub Actions). Visitors get
-  static HTML/CSS/JS + one static `today.json`. No database, no auth, no server
-  generation API calls during normal play. Optional article photos load from
-  their publishers after you type each story.
+- **One shared generation per day**: Cloudflare prepares news before release.
+  Visitors get static HTML/CSS/JS and one stored briefing; playing never calls
+  the model. Optional article photos load from their publishers after you type
+  each story. Briefing reads use Workers/Durable Objects quotas; static assets
+  still serve directly.
 - **All the "dynamic" is client-side**: the performance-reactive color system,
   live WPM/accuracy/telemetry, and animations are computed in the browser.
 
 ## Architecture
 
 ```
-Once/day (GitHub Actions)                 Every visitor (Cloudflare edge)
-┌───────────────────────────┐             ┌──────────────────────────────┐
-│ generate-daily.ts         │  writes     │ static index.html + JS + CSS │
-│  Gemini + Google Search   │ ─────────►  │ + /data/today.json           │
-│  sanitize → validate      │  today.json │                              │
-│  build → deploy (wrangler)│             │ gameplay = pure client, no   │
-└───────────────────────────┘             │ AI, no DB, no per-user calls │
-                                          └──────────────────────────────┘
+Cloudflare preparation (starts 23:05 UTC)
+  Gemini + Google Search → sanitize + validate → stored immutable briefing
+
+Cloudflare serving (server clock, no cron required for the switchover)
+  before 01:00 UTC → previous date's briefing
+  from   01:00 UTC → new date's prepared briefing
+
+GitHub Actions → validate + build + deploy app code independently
 ```
 
-- **Generation** (`scripts/generate-daily.ts`): asks Gemini (grounded with
+- **Generation** (`scripts/generateBriefing.ts`): asks Gemini (grounded with
   Google Search) to research ~24–30h of news, cluster duplicates, rank by
   significance, and return JSON. Output is sanitized to ASCII, assembled, and
-  hard-validated. On failure it exits non-zero and does **not** deploy, so a bad
-  day never replaces the last good puzzle.
-- **Hosting**: Cloudflare Workers Static Assets (no Worker business logic). See
-  `wrangler.toml` and `public/_headers` (fingerprinted assets cached forever;
-  `today.json` always revalidated so nobody is stuck on yesterday's puzzle).
+  hard-validated. Research uses the actual current date even when preparing
+  tomorrow's game. The local CLI remains `npm run generate:daily`.
+- **Publication** (`worker/index.ts`): a SQLite-backed Durable Object stores one
+  immutable text per date. Preparation starts at 23:05 UTC, almost two hours
+  before release. Cloudflare retries every 30 minutes, skipping the model when
+  a briefing is ready. Generation leases prevent concurrent duplicate calls.
+  At exactly 01:00 UTC, requests select the new date by server clock. No job
+  needs to start and no app deployment needs to finish at that moment. Idle
+  browser tabs refresh at the boundary; active typing runs keep their corpus.
+  If fresh generation fails, the game shows a retry message and retries
+  preparation; it never labels a sample or yesterday's text as new news.
+- **Hosting**: Cloudflare Workers Static Assets plus the small publication
+  Worker. `wrangler.toml` routes only briefing/private preparation endpoints
+  through the Worker; the app's static assets are served directly. Briefing
+  responses use `Cache-Control: no-store`.
 - **Daily identity**: `gameNumber` is derived deterministically from a documented
   UTC epoch (`src/lib/gameNumber.ts`), so no server counter is needed.
 - **Story photos**: the daily job collects article preview images in the same
@@ -41,6 +52,8 @@ Once/day (GitHub Actions)                 Every visitor (Cloudflare edge)
   stories are typed, link to their publisher, and never affect the typed text.
 
 ## Local development (Windows)
+
+Requires Node.js 22 or later.
 
 ```powershell
 npm install
@@ -95,14 +108,15 @@ and a "reduced intensity" setting are respected.
 
 ## Deployment
 
-CI (`.github/workflows/ci.yml`) runs on every push/PR using the
-sample fixture. The daily job (`.github/workflows/daily.yml`) is scheduled at
-00:05 UTC with a 00:30 retry, targeting publication by 01:00 UTC. GitHub can
-delay or drop scheduled runs, so this is not a guaranteed deadline. Every run
-builds and deploys the app; a fresh briefing skips only generation and reuses
-the exact live challenge. Pushes to `main` also deploy code changes using the
-live briefing, without calling Gemini or replacing players' text. The job is
-also runnable on demand.
+CI (`.github/workflows/ci.yml`) validates both the app and Worker on every
+push/PR using the sample fixture. **Deploy app** (`.github/workflows/daily.yml`)
+deploys pushes to `main` and can also be run manually. Daily publication no
+longer depends on GitHub's best-effort scheduler or repository inactivity.
+
+Deployment preserves the exact live briefing and seeds it into durable storage
+without replacing existing texts. It also prepares a missing current briefing
+and verifies the public endpoint. Subsequent app deployments leave published
+briefings untouched. The Worker prepares future briefings independently.
 
 Secrets required: `GEMINI_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 
@@ -117,17 +131,21 @@ The default is set in `scripts/generate-daily.ts`. For local generation, export
 the environment variables as shown above; copying `.env.example` to `.env`
 alone does not load them into the script.
 
-After setup, use **Actions → Daily challenge → Run workflow** to generate and
-deploy a briefing. Leave the date blank for today. A manual run regenerates the
-briefing even if today's puzzle is already live, so use it deliberately.
+Deployment copies `GEMINI_API_KEY` and the selected model into Cloudflare Worker
+secrets using Wrangler. A random operator token protects internal preparation
+and migration endpoints and is never included in the browser bundle. No new
+credentials need to be entered. The Cloudflare token must also allow editing
+the Worker's cron triggers and adding its SQLite Durable Object binding.
+
+Use **Actions → Deploy app → Run workflow** to redeploy the app. Published
+briefings are immutable, including on manual redeployment.
 
 ### Scheduled workflow maintenance
 
-GitHub automatically disables scheduled workflows in public repositories after
-60 days without repository activity. Keep this repository active with regular
-maintenance commits. If the daily schedule is disabled, open **Actions → Daily
-challenge → Enable workflow** to resume it. See [GitHub's workflow maintenance
-guidance](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+GitHub can disable scheduled workflows after repository inactivity. The daily
+game now uses Cloudflare preparation triggers and clock-based publication, so
+GitHub inactivity does not stop daily releases. Inspect Cloudflare's Worker cron
+events/logs to diagnose preparation failures.
 
 ## License
 

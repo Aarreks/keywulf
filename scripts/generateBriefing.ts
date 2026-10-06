@@ -1,0 +1,233 @@
+// Shared, server-side generator for Cloudflare and the local CLI. Never shipped to browsers.
+import type { Challenge } from '../src/types';
+import { GoogleGenAI } from '@google/genai';
+import { assembleChallenge, type RawSource, type RawStory } from './buildChallenge';
+import { validateChallenge } from './challengeSchema';
+import { todayUtc } from '../src/lib/gameNumber';
+import { SYSTEM_INSTRUCTION, researchPrompt, formatPrompt } from './prompts';
+import { enrichSources } from './enrichSources';
+import { refineTitles } from './refineTitles';
+import { attachStoryPhotos } from './storyPhotos';
+
+export interface GenerateOptions {
+  apiKey: string;
+  date: string;
+  model?: string;
+  maxOutputTokens?: number;
+}
+
+export async function generateBriefing(options: GenerateOptions): Promise<Challenge> {
+  const API_KEY = options.apiKey;
+  const DATE = options.date;
+  const MODEL = options.model || 'gemini-3.5-flash';
+  const MAX_OUTPUT_TOKENS = options.maxOutputTokens || 16000;
+  const MAX_ATTEMPTS = 3; // per step: initial + up to 2 controlled retries
+
+  if (!API_KEY) {
+    console.error('FATAL: GEMINI_API_KEY is not set. Refusing to generate.');
+    console.error('This key is server-side only and must never be a VITE_ variable.');
+    throw new Error('Briefing generation failed; no text was published.');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(DATE)) {
+    console.error(`FATAL: KEYWULF_DATE "${DATE}" is not YYYY-MM-DD.`);
+    throw new Error('Briefing generation failed; no text was published.');
+  }
+
+  /**
+   * Pause between retry attempts (20s, then 40s). Transient 503 capacity spikes
+   * on the model are common enough that back-to-back retries would burn all
+   * attempts inside the same spike and needlessly fail the day.
+   */
+  function backoff(attempt: number): Promise<void> {
+    const ms = attempt * 20_000;
+    console.log(`  waiting ${ms / 1000}s before retrying...`);
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  interface ModelStories {
+    title?: string;
+    stories: RawStory[];
+  }
+
+  function extractJson(text: string): ModelStories {
+    let t = text.trim();
+    const fence = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(t);
+    if (fence) t = fence[1].trim();
+    if (!t.startsWith('{')) {
+      const first = t.indexOf('{');
+      const last = t.lastIndexOf('}');
+      if (first === -1 || last === -1 || last <= first) {
+        throw new Error('No JSON object found in model output');
+      }
+      t = t.slice(first, last + 1);
+    }
+    const parsed = JSON.parse(t);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.stories)) {
+      throw new Error('Model JSON missing a "stories" array');
+    }
+    return parsed as ModelStories;
+  }
+
+  interface GroundingChunkLike {
+    web?: { uri?: string; title?: string };
+  }
+  interface CandidateLike {
+    groundingMetadata?: { groundingChunks?: GroundingChunkLike[] };
+  }
+
+  function extractGroundingSources(candidates: CandidateLike[] | undefined): RawSource[] {
+    const out: RawSource[] = [];
+    for (const cand of candidates ?? []) {
+      for (const chunk of cand.groundingMetadata?.groundingChunks ?? []) {
+        const uri = chunk.web?.uri;
+        if (uri) out.push({ url: uri, title: chunk.web?.title || uri });
+      }
+    }
+    return out;
+  }
+
+  async function research(ai: GoogleGenAI): Promise<{ notes: string; sources: RawSource[] }> {
+    let lastError = '';
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      console.log(`Research attempt ${attempt}/${MAX_ATTEMPTS} (${MODEL}, grounded)...`);
+      try {
+        const res = await ai.models.generateContent({
+          model: MODEL,
+          contents: researchPrompt(todayUtc()),
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            tools: [{ googleSearch: {} }],
+            temperature: 0.3,
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            thinkingConfig: { thinkingBudget: 4096 },
+          },
+        });
+        const notes = res.text ?? '';
+        const sources = extractGroundingSources(res.candidates as CandidateLike[] | undefined);
+        // A thin research pass starves the format step (observed: 5-story output
+        // from ~2.5k chars of notes). Demand enough material for 12-16 stories.
+        if (notes.trim().length < 2500) throw new Error('Research notes too thin to support 12-16 stories');
+        if (sources.length === 0) {
+          // No grounding metadata means the model answered from memory - which
+          // for news would be stale or invented. Not acceptable.
+          throw new Error('No grounding sources returned (search tool was not used)');
+        }
+        console.log(`Research OK: ${notes.length} chars of notes, ${sources.length} grounded sources.`);
+        return { notes, sources };
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        console.warn(`Research attempt ${attempt} failed: ${lastError.split('\n')[0]}`);
+        if (attempt < MAX_ATTEMPTS) await backoff(attempt);
+      }
+    }
+    throw new Error(`Research failed after ${MAX_ATTEMPTS} attempts: ${lastError}`);
+  }
+
+  /**
+   * Yesterday's headlines, fetched from the live site, feed the format prompt's
+   * continuity rules (lead with what is NEW; never reuse yesterday's wording).
+   * Non-fatal: any failure just means no continuity section. Guarded so a
+   * same-day regeneration never treats its own stories as "yesterday's".
+   */
+  async function fetchPreviousHeadlines(): Promise<string[]> {
+    try {
+      const res = await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, {
+        signal: AbortSignal.timeout(10_000),
+      });
+      const j = (await res.json()) as { date?: string; stories?: Array<{ headline?: string }> };
+      if (!j?.date || j.date >= DATE || !Array.isArray(j.stories)) return [];
+      return j.stories.map((s) => String(s.headline ?? '')).filter(Boolean).slice(0, 16);
+    } catch {
+      return [];
+    }
+  }
+
+  async function main(): Promise<Challenge> {
+    const ai = new GoogleGenAI({ apiKey: API_KEY, httpOptions: { timeout: 90_000 } });
+    const { notes, sources: rawSources } = await research(ai);
+    const previousHeadlines = await fetchPreviousHeadlines();
+    console.log(
+      previousHeadlines.length > 0
+        ? `Continuity: ${previousHeadlines.length} headlines from the previous briefing.`
+        : 'Continuity: no previous briefing available.',
+    );
+
+    // Grounding gives opaque redirect URLs titled only with a domain. Resolve
+    // them (server-side, once per day) to real article URLs + real titles so the
+    // Sources panel is readable. Every failure falls back gracefully.
+    console.log(`Resolving ${rawSources.length} grounding sources to article titles...`);
+    // Bound outbound article requests for the Worker, retaining provenance for
+    // the remaining grounding sources even when their titles are not enriched.
+    const fetched = [
+      ...await enrichSources(
+        rawSources.slice(0, 12).map((s) => ({ title: String(s.title ?? s.url), url: String(s.url) })),
+      ),
+      ...rawSources.slice(12).map(s => ({ title: String(s.title ?? s.url), url: String(s.url) })),
+    ];
+    const enrichedCount = fetched.filter((s, i) => s.title !== rawSources[i]?.title).length;
+    console.log(`Sources resolved: ${enrichedCount}/${fetched.length} gained article titles.`);
+
+    // One cheap model pass to repair junk titles (bot-check pages, section-only
+    // titles, welded-on site names). Code-verified: the model can only rearrange
+    // material it was given, never invent a headline. Non-fatal on failure.
+    console.log('Refining source titles with the model...');
+    const sources = await refineTitles(ai, MODEL, fetched);
+    const refinedCount = sources.filter((s, i) => s.title !== fetched[i]?.title).length;
+    console.log(`Titles refined: ${refinedCount} adjusted.`);
+
+    let feedback: string | undefined;
+    const errors: string[] = [];
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      console.log(`Format attempt ${attempt}/${MAX_ATTEMPTS} (${MODEL}, JSON mode)...`);
+      try {
+        const response = await ai.models.generateContent({
+          model: MODEL,
+          contents: formatPrompt(notes, todayUtc(), previousHeadlines, feedback),
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: 'application/json',
+            temperature: 0.4,
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            thinkingConfig: { thinkingBudget: 2048 },
+          },
+        });
+
+        const text = response.text;
+        if (!text) throw new Error('Empty model response');
+        const model = extractJson(text);
+
+        const challenge = attachStoryPhotos(assembleChallenge({
+          date: DATE,
+          model: MODEL,
+          generatedAt: new Date().toISOString(),
+          title: model.title,
+          stories: model.stories,
+          groundingSources: sources,
+        }));
+
+        validateChallenge(challenge);
+
+        console.log(
+          `SUCCESS: generated ${challenge.stories.length} stories, ` +
+            `${challenge.wordCount} words, game #${challenge.gameNumber}, ` +
+            `${challenge.sourcePool.length} sources.`,
+        );
+        return challenge;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`format attempt ${attempt}: ${msg}`);
+        feedback = msg;
+        console.warn(`Format attempt ${attempt} failed: ${msg.split('\n')[0]}`);
+        if (attempt < MAX_ATTEMPTS) await backoff(attempt);
+      }
+    }
+
+    console.error('FATAL: generation failed after all attempts. today.json was NOT modified.');
+    console.error(errors.join('\n'));
+    throw new Error('Briefing generation failed; no text was published.');
+  }
+
+
+  return main();
+}

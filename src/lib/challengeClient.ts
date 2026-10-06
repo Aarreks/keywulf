@@ -141,6 +141,7 @@ export function buildStorySpans(challenge: Challenge): StorySpan[] {
 export async function fetchTodayChallenge(gameHint?: number): Promise<Challenge> {
   const bust = gameHint ?? Date.now();
   const res = await fetch(`/data/today.json?v=${bust}`, { cache: 'no-store' });
+  if (res.status === 503) throw new ChallengeError('The fresh news briefing is still being prepared. Please try again shortly.');
   if (!res.ok) throw new ChallengeError(`Failed to load challenge (HTTP ${res.status})`);
   const json = await res.json();
   return parseChallenge(json);

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Challenge } from './types';
-import { fetchTodayChallenge, parseChallenge } from './lib/challengeClient';
-import { todayUtc } from './lib/gameNumber';
+import { fetchTodayChallenge } from './lib/challengeClient';
+import { activeChallengeDate, nextPublicationTime } from './lib/publication';
 import {
   loadState,
   saveState,
@@ -21,7 +21,6 @@ import {
   type InProgress,
 } from './lib/storage';
 import { formatWpm } from './lib/scoring';
-import sampleChallenge from './data/sampleChallenge.json';
 
 import { TopBar } from './components/TopBar';
 import { StartScreen } from './components/StartScreen';
@@ -88,16 +87,8 @@ export function App() {
       setChallenge(c);
       setPhase('home');
     } catch (err) {
-      // Fall back to the bundled sample so the app is never a blank page.
-      try {
-        const c = parseChallenge(sampleChallenge as unknown);
-        setChallenge(c);
-        setPhase('home');
-        setLoadError(''); // sample loaded fine
-      } catch {
-        setLoadError(err instanceof Error ? err.message : 'Unknown error');
-        setPhase('error');
-      }
+      setLoadError(err instanceof Error ? err.message : 'Unknown error');
+      setPhase('error');
     }
   }, []);
 
@@ -105,7 +96,19 @@ export function App() {
     void load();
   }, [load]);
 
-  const isToday = useMemo(() => (challenge ? challenge.date === todayUtc() : false), [challenge]);
+  // Idle tabs refresh at the release boundary; an active run keeps its exact
+  // corpus until completion. Coming home after that run picks up the new day.
+  useEffect(() => {
+    if (phase !== 'home') return;
+    const timer = setTimeout(() => void load(), nextPublicationTime() - Date.now() + 50);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && challenge?.date !== activeChallengeDate()) void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [phase, challenge, load]);
+
+  const isToday = challenge ? challenge.date === activeChallengeDate() : false;
   const completedResult: OfficialResult | undefined = challenge
     ? getResult(state, challenge.date)
     : undefined;
@@ -193,7 +196,10 @@ export function App() {
     [persist],
   );
 
-  const goHome = useCallback(() => setPhase('home'), []);
+  const goHome = useCallback(() => {
+    if (challenge && challenge.date !== activeChallengeDate()) void load();
+    else setPhase('home');
+  }, [challenge, load]);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   // --- Render ---

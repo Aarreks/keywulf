@@ -1,17 +1,33 @@
 # Cloudflare Workers Static Assets configuration for Keywulf.
 #
-# This deploys the Vite build output (./dist) as static assets with NO Worker
-# business logic. Cloudflare serves the files directly from its edge; there is
-# no server code executing per request. Caching is controlled by public/_headers
-# (copied into ./dist at build time).
+# Static app assets remain served directly. Only the briefing endpoint and
+# private preparation endpoints invoke Worker code. Daily news is prepared
+# ahead of time and stored independently of app deployments.
 #
 # Docs: https://developers.cloudflare.com/workers/static-assets/
 
 name = "keywulf"
-compatibility_date = "2024-11-01"
+main = "worker/index.ts"
+compatibility_date = "2026-10-01"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
+run_worker_first = ["/data/today.json", "/_internal/*"]
 # Keywulf is a single-page app (view state lives in the client, not the URL),
 # so unknown paths fall back to index.html.
 not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "BRIEFINGS"
+class_name = "DailyBriefing"
+
+[[migrations]]
+tag = "daily-publication-v1"
+new_sqlite_classes = ["DailyBriefing"]
+
+[triggers]
+# At 23:05 prepare the next UTC date. Retries before 01:00 give the model
+# almost two hours; later retries recover from a genuine generation failure.
+# Already prepared dates return immediately without another model call.
+crons = ["5,35 * * * *"]

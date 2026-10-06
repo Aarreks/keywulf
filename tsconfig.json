@@ -20,5 +20,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "scripts", "vite.config.ts", "vitest.config.ts", "vite-env.d.ts"]
+  "include": ["src", "scripts", "worker", "vite.config.ts", "vitest.config.ts", "vite-env.d.ts"]
 }

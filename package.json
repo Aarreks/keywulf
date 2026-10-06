@@ -42,10 +42,10 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.3",
     "vitest": "^2.0.5",
-    "wrangler": "^3.78.0",
+    "wrangler": "^4.147.0",
     "zod": "^3.23.8"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
