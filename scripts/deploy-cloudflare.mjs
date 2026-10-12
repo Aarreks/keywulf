@@ -63,6 +63,10 @@ const beforeRepair = published.ok ? await published.json() : null;
 if (beforeRepair?.date !== activeDate) throw new Error('Live publication verification failed');
 const refreshed = await admin('refresh-sources', activeDate);
 console.log(`Source title refresh for ${activeDate}: ${refreshed.refreshed ? 'applied' : 'already current'}.`);
+const fallback = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/repair-published-source-titles.ts'], {
+  stdio: 'inherit', env: { ...process.env, KEYWULF_ADMIN_TOKEN: operatorToken },
+});
+if (fallback.status !== 0) throw new Error('Runner source title repair failed');
 const afterRepair = await (await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, { cache: 'no-store' })).json();
 const corpusIdentity = c => JSON.stringify({
   date: c.date, gameNumber: c.gameNumber, generatedAt: c.generatedAt, wordCount: c.wordCount,

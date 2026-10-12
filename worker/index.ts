@@ -70,6 +70,19 @@ export class DailyBriefing {
     }
 
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (url.pathname.startsWith('/repair-sources/')) {
+      const original = await this.state.storage.get<Challenge>('challenge');
+      if (!original) return json({ error: 'Briefing not ready' }, 503);
+      const repaired = await request.json() as Challenge;
+      try { validateChallenge(repaired); } catch { return json({ error: 'Invalid repaired metadata' }, 400); }
+      if (sourceRepairIdentity(original) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
+      await this.state.storage.transaction(async storage => {
+        if (JSON.stringify(await storage.get('challenge')) !== JSON.stringify(original)) throw new Error('Concurrent metadata repair; retry');
+        await storage.put('challenge', repaired);
+        await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
+      });
+      return json({ date, repaired: true });
+    }
     if (url.pathname.startsWith('/refresh-sources/')) {
       try {
       if (await this.state.storage.get('sourceMetadataVersion') === SOURCE_METADATA_VERSION) return json({ date, refreshed: false });
@@ -163,11 +176,11 @@ export default {
       const date = url.searchParams.get('date') || preparationDate(Date.now());
       if (!validDate(date)) return json({ error: 'Invalid challenge date' }, 400);
       const action = url.pathname.slice('/_internal/'.length);
-      if (!['prepare', 'seed', 'status', 'refresh-sources'].includes(action)) return json({ error: 'Not found' }, 404);
+      if (!['prepare', 'seed', 'status', 'refresh-sources', 'repair-sources'].includes(action)) return json({ error: 'Not found' }, 404);
       if (request.method !== (action === 'status' ? 'GET' : 'POST')) return json({ error: 'Method not allowed' }, 405);
       return briefing(env, date).fetch(new Request(`https://briefing/${action}/${date}`, {
         method: action === 'status' ? 'GET' : 'POST',
-        body: action === 'seed' ? await request.text() : undefined,
+        body: ['seed', 'repair-sources'].includes(action) ? await request.text() : undefined,
       }));
     }
     return env.ASSETS.fetch(request);

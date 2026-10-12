@@ -2,7 +2,7 @@ import type { Challenge, ChallengeSource } from '../src/types';
 import { enrichSources, type SourceRef } from './enrichSources';
 import { fallbackTitle, isUsableTitle } from './refineTitles';
 
-export const SOURCE_METADATA_VERSION = 2;
+export const SOURCE_METADATA_VERSION = 3;
 
 /** Refresh display-only labels/links. No generation, no edits to the corpus. */
 export async function refreshSourceTitles(

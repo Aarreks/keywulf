@@ -169,6 +169,18 @@ export function youtubeVideoUrl(raw: string): string | null {
   } catch { return null; }
 }
 
+/** Public player metadata can retain a title when the page's title is generic. */
+export function extractYoutubePlayerTitle(html: string, video: string): string | null {
+  const id = new URL(video).searchParams.get('v');
+  for (const match of html.matchAll(/"videoDetails"\s*:\s*\{([^}]{0,16000})/g)) {
+    const details = match[1];
+    if (/"videoId"\s*:\s*"([^"\\]+)"/.exec(details)?.[1] !== id) continue;
+    const raw = /"title"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(details)?.[1];
+    try { const title = titleValue(JSON.parse(raw || 'null')); if (title) return title; } catch { /* Incomplete page data. */ }
+  }
+  return null;
+}
+
 /**
  * Follow one grounding source's redirect to the real article and fetch a real
  * title. Never throws; on any failure returns the input (or partial progress).
@@ -210,7 +222,7 @@ export async function resolveSource(src: SourceRef, timeoutMs = 8000): Promise<S
       finalUrl = res.url || finalUrl;
       if (res.ok && (res.headers.get('content-type') ?? '').includes('html')) {
         const html = await readCapped(res, video ? MAX_VIDEO_HTML_BYTES : MAX_HTML_BYTES);
-        const title = extractHtmlTitle(html) ?? titleFromSlug(finalUrl) ?? src.title;
+        const title = extractHtmlTitle(html) ?? (video ? extractYoutubePlayerTitle(html, video) : null) ?? titleFromSlug(finalUrl) ?? src.title;
         return { ...src, title, url: finalUrl, ...extractHtmlImage(html, finalUrl) };
       }
       await res.body?.cancel();

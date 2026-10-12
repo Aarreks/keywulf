@@ -88,6 +88,17 @@ describe('daily publication', () => {
     expect((await worker.fetch(new Request('https://keywulf.com/_internal/refresh-sources', { method: 'POST' }), env)).status).toBe(401);
   });
 
+  it('accepts metadata retrieved by the runner but rejects any attempt to replace typed text', async () => {
+    const original = challenge('2026-10-06');
+    await admin('seed', original.date, original);
+    const repaired = structuredClone(original);
+    repaired.sourcePool[0].title = 'Verified video title from the publisher';
+    expect((await admin('repair-sources', original.date, repaired)).status).toBe(200);
+    repaired.stories[0].body = repaired.stories[0].body.replace(/\w+/, 'Altered');
+    expect((await admin('repair-sources', original.date, repaired)).status).toBe(409);
+    expect((await worker.fetch(new Request('https://keywulf.com/_internal/repair-sources', { method: 'POST' }), env)).status).toBe(401);
+  });
+
   it('serves a different prepared text at 01:00 without a cron or deployment', async () => {
     await admin('seed', '2026-10-05', challenge('2026-10-05', 'Previous'));
     await admin('seed', '2026-10-06', challenge('2026-10-06'));

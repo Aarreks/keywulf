@@ -56,6 +56,9 @@ GitHub Actions → validate + build + deploy app code independently
   watch-page metadata for videos that disable embedding. Article titles also
   support Twitter metadata and JSON-LD. Blocked/unavailable publishers retain a
   domain label when no trustworthy title or readable URL slug is available.
+  Deployment checks unresolved labels again from the runner, since some sites
+  serve incomplete metadata to Cloudflare. Its authenticated metadata-only
+  update is rejected if any protected game field differs.
 
 ## Local development (Windows)
 

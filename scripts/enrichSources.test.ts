@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { extractHtmlTitle, extractHtmlImage, titleFromSlug, resolveSource, youtubeVideoUrl } from './enrichSources';
+import { extractHtmlTitle, extractHtmlImage, titleFromSlug, resolveSource, youtubeVideoUrl, extractYoutubePlayerTitle } from './enrichSources';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -75,6 +75,12 @@ describe('extractHtmlTitle', () => {
 
 describe('video metadata resolution', () => {
   const canonical = 'https://www.youtube.com/watch?v=abcdefghijk';
+  it('rejects empty YouTube headings and verifies the player title belongs to this video', () => {
+    expect(extractHtmlTitle('<title>- YouTube</title>')).toBeNull();
+    const html = '<script>var ytInitialPlayerResponse={"videoDetails":{"videoId":"abcdefghijk","title":"Reports from the coast"}}</script>';
+    expect(extractYoutubePlayerTitle(html, canonical)).toBe('Reports from the coast');
+    expect(extractYoutubePlayerTitle(html, 'https://www.youtube.com/watch?v=12345678901')).toBeNull();
+  });
   it('recognizes watch, shorts and short URLs without accepting spoofed hosts', () => {
     for (const url of [canonical, 'https://youtu.be/abcdefghijk', 'https://www.youtube.com/shorts/abcdefghijk']) {
       expect(youtubeVideoUrl(url)).toBe(canonical);
