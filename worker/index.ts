@@ -71,6 +71,7 @@ export class DailyBriefing {
 
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
     if (url.pathname.startsWith('/refresh-sources/')) {
+      try {
       if (await this.state.storage.get('sourceMetadataVersion') === SOURCE_METADATA_VERSION) return json({ date, refreshed: false });
       const original = await this.state.storage.get<Challenge>('challenge');
       if (!original) return json({ error: 'Briefing not ready' }, 503);
@@ -84,6 +85,11 @@ export class DailyBriefing {
         await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
       });
       return json({ date, refreshed: true, titles: repaired.sourcePool.map(s => s.title) });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error('Source metadata refresh failed:', detail);
+        return json({ error: 'Source metadata refresh failed', detail }, 500);
+      }
     }
     if (url.pathname.startsWith('/seed/')) {
       const challenge = await request.json() as Challenge;

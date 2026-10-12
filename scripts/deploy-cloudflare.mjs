@@ -25,7 +25,7 @@ wrangler(['secret', 'bulk'], JSON.stringify(secrets));
 wrangler(['deploy']);
 
 async function admin(action, date, payload) {
-  for (let attempt = 0; attempt < 10; attempt++) {
+  for (let attempt = 0; attempt < 100; attempt++) {
     const response = await fetch(`https://keywulf.com/_internal/${action}?date=${date}`, {
       method: action === 'status' ? 'GET' : 'POST',
       headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json' },
@@ -35,11 +35,12 @@ async function admin(action, date, payload) {
     // Allow a short interval for the new script/secret to propagate. All
     // preparation and seed operations are idempotent, including after retry.
     if ([401, 404].includes(response.status) || !response.headers.get('Content-Type')?.includes('application/json')) {
+      console.log(`Waiting for ${action}: HTTP ${response.status}, ${response.headers.get('Content-Type') || 'unknown response type'}`);
       await response.body?.cancel();
       await new Promise(resolve => setTimeout(resolve, 3000));
       continue;
     }
-    if (!response.ok) throw new Error(`Publication ${action} failed: HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`Publication ${action} failed: HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
     return response.json();
   }
   throw new Error('Publication endpoints did not become available after deployment');
