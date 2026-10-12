@@ -22,9 +22,17 @@ not_found_handling = "single-page-application"
 name = "BRIEFINGS"
 class_name = "DailyBriefing"
 
+[[durable_objects.bindings]]
+name = "SOURCES"
+class_name = "SourceMetadata"
+
 [[migrations]]
 tag = "daily-publication-v1"
 new_sqlite_classes = ["DailyBriefing"]
+
+[[migrations]]
+tag = "source-metadata-v1"
+new_sqlite_classes = ["SourceMetadata"]
 
 [triggers]
 # Prepare the current UTC date at 00:20, 00:30, 00:40 and 00:50 UTC.

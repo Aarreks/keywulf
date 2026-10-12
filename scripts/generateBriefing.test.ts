@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { generateBriefing } from './generateBriefing';
 import sample from '../src/data/sampleChallenge.json';
 import { validateChallenge } from './challengeSchema';
+import { enrichSources } from './enrichSources';
 
 const { generate, options } = vi.hoisted(() => ({ generate: vi.fn(), options: vi.fn() }));
 vi.mock('@google/genai', () => ({ GoogleGenAI: class {
@@ -20,9 +21,9 @@ it('researches the actual date while preparing a distinct future game date, with
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ date: sample.date, stories: sample.stories }))));
   generate.mockResolvedValueOnce({
     text: 'Recent grounded research notes with confirmed details. '.repeat(60),
-    candidates: [{ groundingMetadata: { groundingChunks: [{ web: {
-      uri: 'https://publisher.example/news', title: 'A confirmed news story',
-    } }] } }],
+    candidates: [{ groundingMetadata: { groundingChunks: Array.from({ length: 30 }, (_, i) => ({ web: {
+      uri: `https://publisher.example/news/${i}`, title: 'A confirmed news story',
+    } })) } }],
   }).mockResolvedValueOnce({ text: JSON.stringify({ stories: sample.stories }) });
   const result = await generateBriefing({ apiKey: 'test-key', date: '2026-10-06' });
   validateChallenge(result);
@@ -31,4 +32,5 @@ it('researches the actual date while preparing a distinct future game date, with
   expect(generate.mock.calls[0][0].contents).toContain('Today is 2026-10-05');
   expect(generate.mock.calls[1][0].contents).toContain("today's research notes (2026-10-05, UTC)");
   expect(options).toHaveBeenCalledWith(expect.objectContaining({ httpOptions: { timeout: 90000 } }));
+  expect(vi.mocked(enrichSources).mock.calls[0][0]).toHaveLength(30);
 });

@@ -2,6 +2,9 @@ import type { Challenge } from '../src/types';
 import { validateChallenge } from '../scripts/challengeSchema';
 import { generateBriefing } from '../scripts/generateBriefing';
 import { activeChallengeDate, preparationDate } from '../src/lib/publication';
+import type { SourceRef } from '../scripts/enrichSources';
+import { refreshSourceTitles, sourceRepairIdentity, SOURCE_METADATA_VERSION } from '../scripts/refreshSourceTitles';
+export { SourceMetadata } from './sourceMetadata';
 
 // Structural types for the small subset of Cloudflare bindings used here.
 export interface Storage {
@@ -14,6 +17,7 @@ interface Fetcher { fetch(request: Request): Promise<Response> }
 export interface Env {
   ASSETS: Fetcher;
   BRIEFINGS: { idFromName(name: string): unknown; get(id: unknown): Fetcher };
+  SOURCES: { idFromName(name: string): unknown; get(id: unknown): Fetcher };
   GEMINI_API_KEY: string;
   GEMINI_MODEL?: string;
   KEYWULF_ADMIN_TOKEN: string;
@@ -41,6 +45,17 @@ function validDate(date: string): boolean {
 export class DailyBriefing {
   constructor(private state: { storage: Storage }, private env: Env) {}
 
+  private async resolveSource(source: SourceRef): Promise<SourceRef> {
+    try {
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source.url))))
+        .map(byte => byte.toString(16).padStart(2, '0')).join('');
+      const response = await this.env.SOURCES.get(this.env.SOURCES.idFromName(hash)).fetch(new Request('https://metadata/resolve', {
+        method: 'POST', body: JSON.stringify(source),
+      }));
+      return response.ok ? await response.json() as SourceRef : source;
+    } catch { return source; }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const date = url.pathname.split('/').pop() || '';
@@ -55,6 +70,21 @@ export class DailyBriefing {
     }
 
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (url.pathname.startsWith('/refresh-sources/')) {
+      if (await this.state.storage.get('sourceMetadataVersion') === SOURCE_METADATA_VERSION) return json({ date, refreshed: false });
+      const original = await this.state.storage.get<Challenge>('challenge');
+      if (!original) return json({ error: 'Briefing not ready' }, 503);
+      const repaired = await refreshSourceTitles(original, source => this.resolveSource(source));
+      validateChallenge(repaired);
+      if (sourceRepairIdentity(original) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
+      await this.state.storage.transaction(async storage => {
+        const current = await storage.get<Challenge>('challenge');
+        if (JSON.stringify(current) !== JSON.stringify(original)) throw new Error('Briefing metadata changed during repair; retry safely');
+        await storage.put('challenge', repaired);
+        await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
+      });
+      return json({ date, refreshed: true, titles: repaired.sourcePool.map(s => s.title) });
+    }
     if (url.pathname.startsWith('/seed/')) {
       const challenge = await request.json() as Challenge;
       try { validateChallenge(challenge); } catch { return json({ error: 'Invalid briefing' }, 400); }
@@ -79,6 +109,7 @@ export class DailyBriefing {
     try {
       const challenge = await generateBriefing({
         apiKey: this.env.GEMINI_API_KEY, date, model: this.env.GEMINI_MODEL,
+        resolveSource: source => this.resolveSource(source),
       });
       validateChallenge(challenge);
       if (challenge.date !== date) throw new Error('Generated briefing has the wrong date');
@@ -96,6 +127,7 @@ export class DailyBriefing {
         const owner = await storage.get<{ id: string }>('lease');
         if (owner?.id !== lease) throw new Error('Generation lease expired');
         if (!await storage.get('challenge')) await storage.put('challenge', challenge);
+        await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
         await storage.delete('lease');
       });
       console.log(`Briefing ready for ${date}`);
@@ -125,7 +157,7 @@ export default {
       const date = url.searchParams.get('date') || preparationDate(Date.now());
       if (!validDate(date)) return json({ error: 'Invalid challenge date' }, 400);
       const action = url.pathname.slice('/_internal/'.length);
-      if (!['prepare', 'seed', 'status'].includes(action)) return json({ error: 'Not found' }, 404);
+      if (!['prepare', 'seed', 'status', 'refresh-sources'].includes(action)) return json({ error: 'Not found' }, 404);
       if (request.method !== (action === 'status' ? 'GET' : 'POST')) return json({ error: 'Method not allowed' }, 405);
       return briefing(env, date).fetch(new Request(`https://briefing/${action}/${date}`, {
         method: action === 'status' ? 'GET' : 'POST',

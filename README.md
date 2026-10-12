@@ -50,6 +50,12 @@ GitHub Actions → validate + build + deploy app code independently
   requests used to resolve source titles. Only closely matching sources are
   used; unavailable photos are skipped. Photos reveal below the passage as
   stories are typed, link to their publisher, and never affect the typed text.
+- **Source titles**: every grounding source is resolved, with six requests in
+  parallel. Separate cached source-metadata Durable Objects keep each publisher
+  fetch within its own request budget. YouTube uses oEmbed first, then bounded
+  watch-page metadata for videos that disable embedding. Article titles also
+  support Twitter metadata and JSON-LD. Blocked/unavailable publishers retain a
+  domain label when no trustworthy title or readable URL slug is available.
 
 ## Local development (Windows)
 
@@ -116,7 +122,10 @@ longer depends on GitHub's best-effort scheduler or repository inactivity.
 Deployment preserves the exact live briefing and seeds it into durable storage
 without replacing existing texts. It also prepares a missing current briefing
 and verifies the public endpoint. Subsequent app deployments leave published
-briefings untouched. The Worker prepares future briefings independently.
+typed text untouched. Deployment can repair the current briefing's source
+labels and links through a protected, versioned metadata update; date, game
+number, word count, headlines, bodies, photos and result identity stay unchanged.
+The Worker prepares future briefings independently.
 
 Secrets required: `GEMINI_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 
@@ -127,7 +136,7 @@ that Worker in Cloudflare.
 
 To change the generation model without editing code, set the Actions repository
 variable `GEMINI_MODEL` to a Gemini model that supports Google Search grounding.
-The default is set in `scripts/generate-daily.ts`. For local generation, export
+The default is set in `scripts/generateBriefing.ts`. For local generation, export
 the environment variables as shown above; copying `.env.example` to `.env`
 alone does not load them into the script.
 

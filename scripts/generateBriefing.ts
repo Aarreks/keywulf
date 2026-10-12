@@ -5,7 +5,7 @@ import { assembleChallenge, type RawSource, type RawStory } from './buildChallen
 import { validateChallenge } from './challengeSchema';
 import { todayUtc } from '../src/lib/gameNumber';
 import { SYSTEM_INSTRUCTION, researchPrompt, formatPrompt } from './prompts';
-import { enrichSources } from './enrichSources';
+import { enrichSources, type SourceRef } from './enrichSources';
 import { refineTitles } from './refineTitles';
 import { attachStoryPhotos } from './storyPhotos';
 
@@ -14,6 +14,7 @@ export interface GenerateOptions {
   date: string;
   model?: string;
   maxOutputTokens?: number;
+  resolveSource?: (source: SourceRef) => Promise<SourceRef>;
 }
 
 export async function generateBriefing(options: GenerateOptions): Promise<Challenge> {
@@ -156,14 +157,10 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
     // them (server-side, once per day) to real article URLs + real titles so the
     // Sources panel is readable. Every failure falls back gracefully.
     console.log(`Resolving ${rawSources.length} grounding sources to article titles...`);
-    // Bound outbound article requests for the Worker, retaining provenance for
-    // the remaining grounding sources even when their titles are not enriched.
-    const fetched = [
-      ...await enrichSources(
-        rawSources.slice(0, 12).map((s) => ({ title: String(s.title ?? s.url), url: String(s.url) })),
-      ),
-      ...rawSources.slice(12).map(s => ({ title: String(s.title ?? s.url), url: String(s.url) })),
-    ];
+    const fetched = await enrichSources(
+      rawSources.map(s => ({ title: String(s.title ?? s.url), url: String(s.url) })),
+      6, options.resolveSource,
+    );
     const enrichedCount = fetched.filter((s, i) => s.title !== rawSources[i]?.title).length;
     console.log(`Sources resolved: ${enrichedCount}/${fetched.length} gained article titles.`);
 

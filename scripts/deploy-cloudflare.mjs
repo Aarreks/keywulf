@@ -58,5 +58,14 @@ if (!ready.ready) {
   if (!prepared.ready) throw new Error('Another generation is running; publication is not ready yet');
 }
 const published = await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, { cache: 'no-store' });
-if (!published.ok || (await published.json()).date !== activeDate) throw new Error('Live publication verification failed');
+const beforeRepair = published.ok ? await published.json() : null;
+if (beforeRepair?.date !== activeDate) throw new Error('Live publication verification failed');
+const refreshed = await admin('refresh-sources', activeDate);
+console.log(`Source title refresh for ${activeDate}: ${refreshed.refreshed ? 'applied' : 'already current'}.`);
+const afterRepair = await (await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, { cache: 'no-store' })).json();
+const corpusIdentity = c => JSON.stringify({
+  date: c.date, gameNumber: c.gameNumber, generatedAt: c.generatedAt, wordCount: c.wordCount,
+  stories: c.stories.map(({ sources: _sources, ...story }) => story),
+});
+if (corpusIdentity(beforeRepair) !== corpusIdentity(afterRepair)) throw new Error('Title refresh changed the published game');
 console.log(`Verified live briefing for ${activeDate}. Future releases switch at 01:00 UTC without a deployment.`);

@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { extractHtmlTitle, extractHtmlImage, titleFromSlug } from './enrichSources';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { extractHtmlTitle, extractHtmlImage, titleFromSlug, resolveSource, youtubeVideoUrl } from './enrichSources';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('extractHtmlImage', () => {
   it('reads reversed attributes, relative images and HTML entities', () => {
@@ -24,6 +26,17 @@ describe('extractHtmlImage', () => {
 });
 
 describe('extractHtmlTitle', () => {
+  it('keeps apostrophes and quoted words in meta content and reads Twitter titles', () => {
+    expect(extractHtmlTitle(`<META content="President's ceasefire &quot;deal&quot; questioned" PROPERTY="og:title">`))
+      .toBe(`President's ceasefire "deal" questioned`);
+    expect(extractHtmlTitle(`<meta name=twitter:title content="Floods close the airport">`)).toBe('Floods close the airport');
+  });
+  it('reads video itemprop names and article JSON-LD while ignoring generic site labels', () => {
+    expect(extractHtmlTitle(`<title>YouTube</title><meta itemprop="name" content="Earthquake damage disrupts flights">`))
+      .toBe('Earthquake damage disrupts flights');
+    expect(extractHtmlTitle(`<script type="application/ld+json">{"@graph":[{"@type":"WebSite","name":"Publisher home page"},{"@type":"NewsArticle","headline":"Talks resume after the election"}]}</script>`))
+      .toBe('Talks resume after the election');
+  });
   it('prefers og:title over <title>', () => {
     const html = `<html><head>
       <title>Site name here</title>
@@ -57,6 +70,38 @@ describe('extractHtmlTitle', () => {
     const t = extractHtmlTitle(html);
     // The regex bounds capture length; whatever comes back must respect the cap.
     expect(t === null || t.length <= 160).toBe(true);
+  });
+});
+
+describe('video metadata resolution', () => {
+  const canonical = 'https://www.youtube.com/watch?v=abcdefghijk';
+  it('recognizes watch, shorts and short URLs without accepting spoofed hosts', () => {
+    for (const url of [canonical, 'https://youtu.be/abcdefghijk', 'https://www.youtube.com/shorts/abcdefghijk']) {
+      expect(youtubeVideoUrl(url)).toBe(canonical);
+    }
+    expect(youtubeVideoUrl('https://youtube.com.attacker.test/watch?v=abcdefghijk')).toBeNull();
+  });
+  it('resolves grounding redirects and gets a real video title from oEmbed', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: canonical } }))
+      .mockResolvedValueOnce(Response.json({ title: 'Fresh report from the coast' }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await resolveSource({ title: 'youtube.com', url: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/token' }))
+      .toEqual({ title: 'Fresh report from the coast', url: canonical });
+    expect(fetchMock.mock.calls[1][0]).toContain('/oembed?');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it('finds late watch-page metadata when a video does not allow embedding', async () => {
+    const html = `<title>YouTube</title>${' '.repeat(600000)}<meta itemprop="name" content="Aftershocks disrupt flights and homes">`;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response(html, { headers: { 'Content-Type': 'text/html' } })));
+    expect((await resolveSource({ title: 'youtube.com', url: canonical })).title).toBe('Aftershocks disrupt flights and homes');
+  });
+  it('retains a resolved article link when its page is inaccessible', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: 'https://publisher.example/report/1234' } }))
+      .mockRejectedValueOnce(new Error('timeout')));
+    expect((await resolveSource({ title: 'publisher.example', url: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/token' })).url)
+      .toBe('https://publisher.example/report/1234');
   });
 });
 

@@ -7,6 +7,8 @@
 // back to a slug-derived title, then to whatever the grounding gave us. Titles
 // are display-only (never typed), so Unicode is fine here.
 
+import { isUsableTitle } from './sourceTitles';
+
 export interface SourceRef {
   title: string;
   url: string;
@@ -19,6 +21,7 @@ const UA =
 
 const MAX_TITLE_CHARS = 160;
 const MAX_HTML_BYTES = 262_144; // titles live in <head>; don't drain whole pages
+const MAX_VIDEO_HTML_BYTES = 1_048_576; // YouTube puts metadata after large inline scripts
 
 function decodeEntities(s: string): string {
   return s
@@ -38,25 +41,53 @@ function decodeEntities(s: string): string {
     .replace(/&ldquo;/g, '"');
 }
 
-/** Pull a human title out of an HTML document: og:title first, then <title>. */
+function attributes(tag: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const attr of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+    out.set(attr[1].toLowerCase(), decodeEntities(attr[2] ?? attr[3] ?? attr[4]));
+  }
+  return out;
+}
+
+function titleValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = decodeEntities(value).replace(/\s+/g, ' ').trim();
+  return isUsableTitle(clean) ? clean.slice(0, MAX_TITLE_CHARS) : null;
+}
+
+/** Read publisher titles, with quote-safe attributes and structured metadata. */
 export function extractHtmlTitle(html: string): string | null {
-  const og =
-    /<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']{3,300})["']/i.exec(html) ??
-    /<meta[^>]+content=["']([^"']{3,300})["'][^>]*property=["']og:title["']/i.exec(html);
-  const raw = og?.[1] ?? /<title[^>]*>([\s\S]{3,300}?)<\/title>/i.exec(html)?.[1] ?? null;
-  if (!raw) return null;
-  const clean = decodeEntities(raw).replace(/\s+/g, ' ').trim();
-  return clean.length >= 3 ? clean.slice(0, MAX_TITLE_CHARS) : null;
+  const meta = new Map<string, string>();
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const attrs = attributes(tag);
+    const key = (attrs.get('property') ?? attrs.get('name') ?? attrs.get('itemprop'))?.toLowerCase();
+    if (key && attrs.has('content') && !meta.has(key)) meta.set(key, attrs.get('content')!);
+  }
+  for (const key of ['og:title', 'twitter:title', 'headline', 'name']) {
+    const title = titleValue(meta.get(key));
+    if (title) return title;
+  }
+  for (const script of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (attributes(script[1]).get('type')?.toLowerCase() !== 'application/ld+json') continue;
+    try {
+      const parsed = JSON.parse(script[2]);
+      const entries = Array.isArray(parsed) ? parsed : [parsed, ...(Array.isArray(parsed?.['@graph']) ? parsed['@graph'] : [])];
+      for (const entry of entries.slice(0, 100)) {
+        const types = [entry?.['@type']].flat();
+        if (!types.some(type => /^(newsarticle|article|videoobject)$/i.test(String(type)))) continue;
+        const title = titleValue(entry.headline ?? entry.name);
+        if (title) return title;
+      }
+    } catch { /* Publisher JSON-LD can be malformed. */ }
+  }
+  return titleValue(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]);
 }
 
 /** Read publisher preview metadata, resolving relative URLs against the article. */
 export function extractHtmlImage(html: string, pageUrl: string): { imageUrl: string; imageAlt?: string } | null {
   const meta = new Map<string, string>();
   for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
-    const attrs = new Map<string, string>();
-    for (const attr of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
-      attrs.set(attr[1].toLowerCase(), decodeEntities(attr[2] ?? attr[3]));
-    }
+    const attrs = attributes(tag);
     const key = (attrs.get('property') ?? attrs.get('name'))?.toLowerCase();
     if (key && attrs.has('content') && !meta.has(key)) meta.set(key, attrs.get('content')!);
   }
@@ -113,14 +144,29 @@ async function readCapped(res: Response, limit: number): Promise<string> {
   for (;;) {
     const { done, value } = await reader.read();
     if (done || !value) break;
-    bytes += value.byteLength;
-    out += decoder.decode(value, { stream: true });
+    const part = value.subarray(0, limit - bytes);
+    bytes += part.byteLength;
+    out += decoder.decode(part, { stream: true });
     if (bytes >= limit) {
       await reader.cancel().catch(() => {});
       break;
     }
   }
-  return out;
+  return out + decoder.decode();
+}
+
+/** Canonicalize supported video URLs without trusting lookalike hostnames. */
+export function youtubeVideoUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    let id: string | null = null;
+    if (host === 'youtu.be') id = url.pathname.split('/')[1];
+    else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'www.youtube-nocookie.com'].includes(host)) {
+      id = url.searchParams.get('v') ?? /^\/(?:shorts|embed|live)\/([^/]+)/.exec(url.pathname)?.[1] ?? null;
+    }
+    return id && /^[\w-]{11}$/.test(id) ? `https://www.youtube.com/watch?v=${id}` : null;
+  } catch { return null; }
 }
 
 /**
@@ -130,34 +176,59 @@ async function readCapped(res: Response, limit: number): Promise<string> {
 export async function resolveSource(src: SourceRef, timeoutMs = 8000): Promise<SourceRef> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let finalUrl = src.url;
   try {
-    const res = await fetch(src.url, {
-      redirect: 'follow',
-      signal: ctrl.signal,
-      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
-    });
-    const finalUrl = res.url || src.url;
-    let title: string | null = null;
-    let image: ReturnType<typeof extractHtmlImage> = null;
-    const type = res.headers.get('content-type') ?? '';
-    if (res.ok && type.includes('html')) {
-      const html = await readCapped(res, MAX_HTML_BYTES);
-      title = extractHtmlTitle(html);
-      image = extractHtmlImage(html, finalUrl);
+    let checkedVideo = false;
+    for (let hop = 0; hop < 8; hop++) {
+      const video = youtubeVideoUrl(finalUrl);
+      if (video && !checkedVideo) {
+        checkedVideo = true;
+        finalUrl = video;
+        try {
+          const metadata = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(video)}`, {
+            signal: ctrl.signal, headers: { accept: 'application/json' },
+          });
+          if (metadata.ok) {
+            const info = JSON.parse(await readCapped(metadata, 32_768)) as { title?: string; thumbnail_url?: string };
+            const title = titleValue(info.title);
+            if (title) return { ...src, title, url: video };
+          } else await metadata.body?.cancel();
+        } catch { /* Some non-embeddable videos still expose watch-page metadata. */ }
+      }
+      const res = await fetch(finalUrl, {
+        redirect: 'manual', signal: ctrl.signal,
+        headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
+      });
+      const location = res.headers.get('location');
+      if (res.status >= 300 && res.status < 400 && location) {
+        const nextUrl = new URL(location, finalUrl);
+        if (!['http:', 'https:'].includes(nextUrl.protocol) || nextUrl.username || nextUrl.password) break;
+        await res.body?.cancel();
+        finalUrl = nextUrl.href;
+        continue;
+      }
+      finalUrl = res.url || finalUrl;
+      if (res.ok && (res.headers.get('content-type') ?? '').includes('html')) {
+        const html = await readCapped(res, video ? MAX_VIDEO_HTML_BYTES : MAX_HTML_BYTES);
+        const title = extractHtmlTitle(html) ?? titleFromSlug(finalUrl) ?? src.title;
+        return { ...src, title, url: finalUrl, ...extractHtmlImage(html, finalUrl) };
+      }
+      await res.body?.cancel();
+      break;
     }
-    title = title ?? titleFromSlug(finalUrl) ?? src.title;
-    return { title, url: finalUrl, ...image };
   } catch {
-    return src;
+    // Keep a resolved article URL even when its metadata request times out.
   } finally {
     clearTimeout(timer);
   }
+  return { ...src, title: titleFromSlug(finalUrl) ?? src.title, url: finalUrl };
 }
 
 /** Resolve a batch of sources with bounded concurrency. Order-preserving. */
 export async function enrichSources(
   sources: SourceRef[],
   concurrency = 6,
+  resolver: (source: SourceRef) => Promise<SourceRef> = resolveSource,
 ): Promise<SourceRef[]> {
   const out: SourceRef[] = new Array(sources.length);
   let next = 0;
@@ -165,7 +236,7 @@ export async function enrichSources(
     for (;;) {
       const i = next++;
       if (i >= sources.length) return;
-      out[i] = await resolveSource(sources[i]);
+      out[i] = await resolver(sources[i]);
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, sources.length) }, worker));

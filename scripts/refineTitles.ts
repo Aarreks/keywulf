@@ -9,18 +9,8 @@
 
 import type { GoogleGenAI } from '@google/genai';
 import { titleFromSlug, type SourceRef } from './enrichSources';
-
-/** Interstitial/bot-check/utility page titles that must never be shown. */
-const JUNK_TITLES =
-  /^(one moment|just a moment|attention required|access denied|are you (a )?(human|robot)|please verify|verifying you|checking your browser|loading|redirecting|error|forbidden|not found|page not found|40[34]\b|503\b|captcha|security check|robot check|please wait|please enable (js|javascript|cookies))/i;
-
-/** A displayable article title: 3+ words and not an interstitial phrase. */
-export function isUsableTitle(t: string | null | undefined): t is string {
-  if (!t) return false;
-  const s = t.trim();
-  if (s.split(/\s+/).length < 3) return false; // "Europe", "World News"
-  return !JUNK_TITLES.test(s);
-}
+import { isUsableTitle } from './sourceTitles';
+export { isUsableTitle } from './sourceTitles';
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 

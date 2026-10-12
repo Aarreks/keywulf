@@ -5,6 +5,7 @@ import { generateBriefing } from '../scripts/generateBriefing';
 import { gameNumberForDate } from '../src/lib/gameNumber';
 import sample from '../src/data/sampleChallenge.json';
 import type { Challenge } from '../src/types';
+import type { SourceRef } from '../scripts/enrichSources';
 
 vi.mock('../scripts/generateBriefing', () => ({ generateBriefing: vi.fn() }));
 
@@ -31,6 +32,7 @@ function challenge(date: string, word = 'Fresh'): Challenge {
 
 let env: Env;
 let objects: Map<string, DailyBriefing>;
+let resolveMetadata: ReturnType<typeof vi.fn>;
 const admin = (action: string, date: string, body?: unknown) => worker.fetch(new Request(
   `https://keywulf.com/_internal/${action}?date=${date}`, {
     method: action === 'status' ? 'GET' : 'POST',
@@ -44,6 +46,10 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-06T00:20:00Z'));
   vi.mocked(generateBriefing).mockReset();
   objects = new Map();
+  resolveMetadata = vi.fn(async (request: Request) => {
+    const source = await request.json() as SourceRef;
+    return Response.json({ ...source, title: 'Real publisher article title', url: 'https://publisher.example/article' });
+  });
   env = {
     ASSETS: { fetch: vi.fn(async () => new Response('static asset')) },
     BRIEFINGS: {
@@ -54,12 +60,34 @@ beforeEach(() => {
         return objects.get(key)!;
       },
     },
+    SOURCES: { idFromName: name => name, get: () => ({ fetch: resolveMetadata }) },
     GEMINI_API_KEY: 'test-key', KEYWULF_ADMIN_TOKEN: 'operator-token',
   };
 });
 afterEach(() => vi.useRealTimers());
 
 describe('daily publication', () => {
+  it('repairs today\'s source titles and links without changing the published text or scores', async () => {
+    const original = challenge('2026-10-06');
+    const source = { title: 'youtube.com', url: 'https://www.youtube.com/watch?v=abcdefghijk' };
+    original.sourcePool = [source];
+    original.stories[0].sources = [source];
+    await admin('seed', original.date, original);
+    expect((await admin('refresh-sources', original.date)).status).toBe(200);
+    vi.setSystemTime(new Date('2026-10-06T01:00:00Z'));
+    const published = await (await worker.fetch(new Request('https://keywulf.com/data/today.json'), env)).json() as Challenge;
+    expect(published.sourcePool[0]).toEqual({ title: 'Real publisher article title', url: 'https://publisher.example/article' });
+    expect(published.stories[0].sources[0]).toEqual(published.sourcePool[0]);
+    expect(published.stories.map(({ sources: _sources, ...s }) => s)).toEqual(original.stories.map(({ sources: _sources, ...s }) => s));
+    expect([published.date, published.generatedAt, published.wordCount, published.gameNumber]).toEqual(
+      [original.date, original.generatedAt, original.wordCount, original.gameNumber]);
+    expect(resolveMetadata).toHaveBeenCalledTimes(1);
+    expect(await (await admin('refresh-sources', original.date)).json()).toEqual({ date: original.date, refreshed: false });
+    expect(resolveMetadata).toHaveBeenCalledTimes(1);
+    expect(generateBriefing).not.toHaveBeenCalled();
+    expect((await worker.fetch(new Request('https://keywulf.com/_internal/refresh-sources', { method: 'POST' }), env)).status).toBe(401);
+  });
+
   it('serves a different prepared text at 01:00 without a cron or deployment', async () => {
     await admin('seed', '2026-10-05', challenge('2026-10-05', 'Previous'));
     await admin('seed', '2026-10-06', challenge('2026-10-06'));
