@@ -37,4 +37,7 @@ new_sqlite_classes = ["SourceMetadata"]
 [triggers]
 # Prepare the current UTC date at 00:20, 00:30, 00:40 and 00:50 UTC.
 # Already prepared dates return immediately without another model call.
-crons = ["20,30,40,50 0 * * *"]
+crons = ["20,30,40,50 0 * * *", "5,25,45 1,2 * * *"]
+
+[vars]
+KEYWULF_RECOVERY_ENABLED = "true"

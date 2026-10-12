@@ -4,6 +4,7 @@ import { generateBriefing } from '../scripts/generateBriefing';
 import { activeChallengeDate, preparationDate } from '../src/lib/publication';
 import type { SourceRef } from '../scripts/enrichSources';
 import { refreshSourceTitles, sourceRepairIdentity, SOURCE_METADATA_VERSION } from '../scripts/refreshSourceTitles';
+import { RECOVERY_CRON, recoverySlot } from './recovery';
 export { SourceMetadata } from './sourceMetadata';
 
 // Structural types for the small subset of Cloudflare bindings used here.
@@ -21,6 +22,7 @@ export interface Env {
   GEMINI_API_KEY: string;
   GEMINI_MODEL?: string;
   KEYWULF_ADMIN_TOKEN: string;
+  KEYWULF_RECOVERY_ENABLED?: string;
 }
 
 function json(value: unknown, status = 200): Response {
@@ -113,13 +115,20 @@ export class DailyBriefing {
       });
       return json({ date, ready: true });
     }
-    if (!url.pathname.startsWith('/prepare/')) return json({ error: 'Not found' }, 404);
+    const recovering = url.pathname.startsWith('/recover/');
+    if (!recovering && !url.pathname.startsWith('/prepare/')) return json({ error: 'Not found' }, 404);
+    const slot = recovering ? recoverySlot(date, Number(url.searchParams.get('scheduledTime')), Date.now()) : null;
+    if (recovering && (this.env.KEYWULF_RECOVERY_ENABLED !== 'true' || !slot)) {
+      return json({ date, skipped: 'Recovery disabled or outside its window' });
+    }
 
     const lease = crypto.randomUUID();
     const decision = await this.state.storage.transaction(async (storage) => {
       if (await storage.get('challenge')) return 'ready';
+      if (slot && await storage.get(`recovery:${slot}`)) return 'used';
       const existing = await storage.get<{ until: number }>('lease');
       if (existing && existing.until > Date.now()) return 'busy';
+      if (slot) await storage.put(`recovery:${slot}`, true);
       await storage.put('lease', { id: lease, until: Date.now() + 15 * 60_000 });
       return 'generate';
     });
@@ -186,9 +195,12 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  async scheduled(controller: { scheduledTime: number }, env: Env): Promise<void> {
-    const date = preparationDate(controller.scheduledTime);
-    const result = await briefing(env, date).fetch(new Request(`https://briefing/prepare/${date}`, { method: 'POST' }));
+  async scheduled(controller: { scheduledTime: number; cron?: string }, env: Env): Promise<void> {
+    const recovering = controller.cron === RECOVERY_CRON;
+    const date = recovering ? activeChallengeDate(controller.scheduledTime) : preparationDate(controller.scheduledTime);
+    if (recovering && (env.KEYWULF_RECOVERY_ENABLED !== 'true' || !recoverySlot(date, controller.scheduledTime, Date.now()))) return;
+    const path = recovering ? `recover/${date}?scheduledTime=${controller.scheduledTime}` : `prepare/${date}`;
+    const result = await briefing(env, date).fetch(new Request(`https://briefing/${path}`, { method: 'POST' }));
     if (!result.ok) throw new Error(`News preparation failed for ${date}: HTTP ${result.status}`);
   },
 };

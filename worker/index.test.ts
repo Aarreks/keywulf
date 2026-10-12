@@ -6,6 +6,7 @@ import { gameNumberForDate } from '../src/lib/gameNumber';
 import sample from '../src/data/sampleChallenge.json';
 import type { Challenge } from '../src/types';
 import type { SourceRef } from '../scripts/enrichSources';
+import { RECOVERY_CRON } from './recovery';
 
 vi.mock('../scripts/generateBriefing', () => ({ generateBriefing: vi.fn() }));
 
@@ -32,6 +33,7 @@ function challenge(date: string, word = 'Fresh'): Challenge {
 
 let env: Env;
 let objects: Map<string, DailyBriefing>;
+let stores: Map<string, MemoryStorage>;
 let resolveMetadata: ReturnType<typeof vi.fn>;
 const admin = (action: string, date: string, body?: unknown) => worker.fetch(new Request(
   `https://keywulf.com/_internal/${action}?date=${date}`, {
@@ -46,6 +48,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-06T00:20:00Z'));
   vi.mocked(generateBriefing).mockReset();
   objects = new Map();
+  stores = new Map();
   resolveMetadata = vi.fn(async (request: Request) => {
     const source = await request.json() as SourceRef;
     return Response.json({ ...source, title: 'Real publisher article title', url: 'https://publisher.example/article' });
@@ -56,17 +59,88 @@ beforeEach(() => {
       idFromName: name => name,
       get: id => {
         const key = String(id);
-        if (!objects.has(key)) objects.set(key, new DailyBriefing({ storage: new MemoryStorage() }, env));
+        if (!stores.has(key)) stores.set(key, new MemoryStorage());
+        if (!objects.has(key)) objects.set(key, new DailyBriefing({ storage: stores.get(key)! }, env));
         return objects.get(key)!;
       },
     },
     SOURCES: { idFromName: name => name, get: () => ({ fetch: resolveMetadata }) },
     GEMINI_API_KEY: 'test-key', KEYWULF_ADMIN_TOKEN: 'operator-token',
+    KEYWULF_RECOVERY_ENABLED: 'true',
   };
 });
 afterEach(() => vi.useRealTimers());
 
 describe('daily publication', () => {
+  const recovery = async (time: string) => {
+    const scheduledTime = Date.parse(`2026-10-06T${time}:00Z`);
+    vi.setSystemTime(scheduledTime);
+    return worker.scheduled({ scheduledTime, cron: RECOVERY_CRON }, env);
+  };
+
+  it('recovers automatically after all four preparation slots fail, then keeps the recovered corpus immutable', async () => {
+    await admin('seed', '2026-10-05', challenge('2026-10-05', 'Previous'));
+    vi.mocked(generateBriefing).mockRejectedValue(new Error('upstream outage'));
+    for (const minute of [20, 30, 40, 50]) {
+      vi.setSystemTime(Date.parse(`2026-10-06T00:${minute}:00Z`));
+      await expect(worker.scheduled({ scheduledTime: Date.now() }, env)).rejects.toThrow('HTTP 503');
+    }
+    vi.setSystemTime(Date.parse('2026-10-06T01:00:00Z'));
+    expect((await worker.fetch(new Request('https://keywulf.com/data/today.json'), env)).status).toBe(503);
+    vi.mocked(generateBriefing).mockResolvedValue(challenge('2026-10-06', 'Recovered'));
+    await recovery('01:05');
+    // Eviction/restart keeps the durable slot and challenge, not process state.
+    objects.delete('2026-10-06');
+    await recovery('01:05');
+    await recovery('01:25');
+    const published = await (await worker.fetch(new Request('https://keywulf.com/data/today.json'), env)).json() as Challenge;
+    expect(published).toEqual(challenge('2026-10-06', 'Recovered'));
+    expect(generateBriefing).toHaveBeenCalledTimes(5);
+  });
+
+  it('bounds recovery to six durable slots, even when failed deliveries replay after eviction', async () => {
+    vi.mocked(generateBriefing).mockRejectedValue(new Error('persistent outage'));
+    for (const time of ['01:05', '01:25', '01:45', '02:05', '02:25', '02:45']) {
+      await expect(recovery(time)).rejects.toThrow('HTTP 503');
+      objects.delete('2026-10-06');
+      await recovery(time);
+    }
+    expect(generateBriefing).toHaveBeenCalledTimes(6);
+    vi.setSystemTime(Date.parse('2026-10-06T03:00:00Z'));
+    await worker.scheduled({ cron: RECOVERY_CRON, scheduledTime: Date.parse('2026-10-06T02:45:00Z') }, env);
+    expect(generateBriefing).toHaveBeenCalledTimes(6);
+    expect((await worker.fetch(new Request('https://keywulf.com/data/today.json'), env)).status).toBe(503);
+    // Operators can still recover manually after the automatic budget ends.
+    vi.mocked(generateBriefing).mockResolvedValue(challenge('2026-10-06'));
+    expect((await admin('prepare', '2026-10-06')).status).toBe(200);
+  });
+
+  it('allows recovery after a crashed preparation lease expires, with no parallel generation', async () => {
+    await admin('status', '2026-10-06');
+    await stores.get('2026-10-06')!.put('lease', { id: 'crashed', until: Date.parse('2026-10-06T01:15:00Z') });
+    await recovery('01:05');
+    expect(generateBriefing).not.toHaveBeenCalled();
+    vi.mocked(generateBriefing).mockResolvedValue(challenge('2026-10-06'));
+    await recovery('01:25');
+    expect(generateBriefing).toHaveBeenCalledTimes(1);
+  });
+
+  it('can disable recovery without disabling the original preparation schedule', async () => {
+    env.KEYWULF_RECOVERY_ENABLED = 'false';
+    await recovery('01:05');
+    expect(generateBriefing).not.toHaveBeenCalled();
+    vi.mocked(generateBriefing).mockResolvedValue(challenge('2026-10-06'));
+    vi.setSystemTime(Date.parse('2026-10-06T00:20:00Z'));
+    await worker.scheduled({ scheduledTime: Date.now(), cron: '20,30,40,50 0 * * *' }, env);
+    expect(generateBriefing).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores invalid slots and late deliveries from another game day', async () => {
+    await recovery('01:10');
+    vi.setSystemTime(Date.parse('2026-10-07T01:05:00Z'));
+    await worker.scheduled({ cron: RECOVERY_CRON, scheduledTime: Date.parse('2026-10-06T01:05:00Z') }, env);
+    expect(generateBriefing).not.toHaveBeenCalled();
+  });
   it('repairs today\'s source titles and links without changing the published text or scores', async () => {
     const original = challenge('2026-10-06');
     const source = { title: 'youtube.com', url: 'https://www.youtube.com/watch?v=abcdefghijk' };
