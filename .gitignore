@@ -12,6 +12,7 @@ dist
 .vscode/*
 !.vscode/extensions.json
 .idea
+.claude/
 .wrangler
 node_modules/.tmp
 

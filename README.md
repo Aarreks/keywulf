@@ -159,6 +159,15 @@ game now uses Cloudflare preparation triggers and clock-based publication, so
 GitHub inactivity does not stop daily releases. Inspect Cloudflare's Worker cron
 events/logs to diagnose preparation failures.
 
+### Recovery and freshness monitoring
+
+The four normal preparation slots remain 00:20/00:30/00:40/00:50 UTC. Bounded
+late recovery adds six slots between 01:05 and 02:45 UTC when today's fresh
+briefing is missing. An independent Actions freshness check fails when the
+public briefing is missing, stale or invalid. See
+[the reliability runbook](docs/RELIABILITY.md) for outage simulations, notification
+setup, deployment checks, the recovery kill switch and rollback instructions.
+
 ## License
 
 MIT
