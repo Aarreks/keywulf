@@ -1,6 +1,4 @@
-// The Keywulf editorial prompts, shared by the production generator
-// (generate-daily.ts) and the dry-run preview tool (preview-generation.ts) so
-// quality tests always exercise exactly what production will run.
+// Editorial prompts used by the shared generation pipeline and its tests.
 
 export const SYSTEM_INSTRUCTION = `You are the editor of Keywulf, a once-per-day global news briefing that people type as a two-minute typing game. Your register is a literate English broadsheet: terse, precise, globally minded, with a very dry wit deployed sparingly. You avoid US-centric bias, clickbait, celebrity gossip, and culture-war filler. You never invent facts or sources, and you never let a joke distort a fact.`;
 

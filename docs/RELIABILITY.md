@@ -72,8 +72,8 @@ the mocked tests exercise that path without another server.
 
 ## Deployment review and rollback
 
-This review branch has not been deployed. **Merging to main triggers the existing
-Deploy app workflow.** Review first, then merge when ready to deploy. Afterward:
+**Merging to main triggers the existing Deploy app workflow.** Review first,
+then merge when ready to deploy. Afterward:
 
 1. Confirm the Deploy app run succeeds and the public freshness probe passes.
 2. In Cloudflare, confirm both cron expressions in `wrangler.toml` are present
