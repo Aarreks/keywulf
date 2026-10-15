@@ -14,6 +14,8 @@ export interface Storage {
   delete(key: string): Promise<boolean>;
   transaction<T>(fn: (storage: Storage) => Promise<T>): Promise<T>;
 }
+const GENERATION_LEASE_MS = 15 * 60_000;
+
 interface Fetcher { fetch(request: Request): Promise<Response> }
 export interface Env {
   ASSETS: Fetcher;
@@ -32,11 +34,11 @@ function json(value: unknown, status = 200): Response {
   });
 }
 
-function briefing(env: Env, date: string): Fetcher {
+function briefingForDate(env: Env, date: string): Fetcher {
   return env.BRIEFINGS.get(env.BRIEFINGS.idFromName(date));
 }
 
-function validDate(date: string): boolean {
+function isValidChallengeDate(date: string): boolean {
   const parsed = new Date(`${date}T00:00:00Z`);
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(parsed.getTime()) &&
     parsed.toISOString().slice(0, 10) === date;
@@ -58,10 +60,21 @@ export class DailyBriefing {
     } catch { return source; }
   }
 
+  // Network lookups happen outside transactions. Only commit if the snapshot
+  // we repaired is still current; otherwise a slower repair could undo a newer one.
+  private async commitSourceRepair(original: Challenge, repaired: Challenge): Promise<boolean> {
+    return this.state.storage.transaction(async storage => {
+      if (JSON.stringify(await storage.get('challenge')) !== JSON.stringify(original)) return false;
+      await storage.put('challenge', repaired);
+      await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
+      return true;
+    });
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const date = url.pathname.split('/').pop() || '';
-    if (!validDate(date)) return json({ error: 'Invalid challenge date' }, 400);
+    if (!isValidChallengeDate(date)) return json({ error: 'Invalid challenge date' }, 400);
 
     if (request.method === 'GET') {
       const challenge = await this.state.storage.get<Challenge>('challenge');
@@ -78,28 +91,19 @@ export class DailyBriefing {
       const repaired = await request.json() as Challenge;
       try { validateChallenge(repaired); } catch { return json({ error: 'Invalid repaired metadata' }, 400); }
       if (sourceRepairIdentity(original) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
-      await this.state.storage.transaction(async storage => {
-        if (JSON.stringify(await storage.get('challenge')) !== JSON.stringify(original)) throw new Error('Concurrent metadata repair; retry');
-        await storage.put('challenge', repaired);
-        await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
-      });
+      if (!await this.commitSourceRepair(original, repaired)) return json({ error: 'Concurrent metadata repair; retry' }, 409);
       return json({ date, repaired: true });
     }
     if (url.pathname.startsWith('/refresh-sources/')) {
       try {
-      if (await this.state.storage.get('sourceMetadataVersion') === SOURCE_METADATA_VERSION) return json({ date, refreshed: false });
-      const original = await this.state.storage.get<Challenge>('challenge');
-      if (!original) return json({ error: 'Briefing not ready' }, 503);
-      const repaired = await refreshSourceTitles(original, source => this.resolveSource(source));
-      validateChallenge(repaired);
-      if (sourceRepairIdentity(original) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
-      await this.state.storage.transaction(async storage => {
-        const current = await storage.get<Challenge>('challenge');
-        if (JSON.stringify(current) !== JSON.stringify(original)) throw new Error('Briefing metadata changed during repair; retry safely');
-        await storage.put('challenge', repaired);
-        await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
-      });
-      return json({ date, refreshed: true, titles: repaired.sourcePool.map(s => s.title) });
+        if (await this.state.storage.get('sourceMetadataVersion') === SOURCE_METADATA_VERSION) return json({ date, refreshed: false });
+        const original = await this.state.storage.get<Challenge>('challenge');
+        if (!original) return json({ error: 'Briefing not ready' }, 503);
+        const repaired = await refreshSourceTitles(original, source => this.resolveSource(source));
+        validateChallenge(repaired);
+        if (sourceRepairIdentity(original) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
+        if (!await this.commitSourceRepair(original, repaired)) return json({ error: 'Concurrent metadata repair; retry' }, 409);
+        return json({ date, refreshed: true, titles: repaired.sourcePool.map(s => s.title) });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         console.error('Source metadata refresh failed:', detail);
@@ -121,15 +125,20 @@ export class DailyBriefing {
     if (recovering && (this.env.KEYWULF_RECOVERY_ENABLED !== 'true' || !slot)) {
       return json({ date, skipped: 'Recovery disabled or outside its window' });
     }
+    return this.prepare(date, slot);
+  }
 
-    const lease = crypto.randomUUID();
+  private async prepare(date: string, slot: string | null): Promise<Response> {
+    const leaseId = crypto.randomUUID();
+    // Claim ownership atomically, but never hold a transaction across model calls.
+    // The callback may be retried by storage, so keep external side effects out.
     const decision = await this.state.storage.transaction(async (storage) => {
       if (await storage.get('challenge')) return 'ready';
       if (slot && await storage.get(`recovery:${slot}`)) return 'used';
       const existing = await storage.get<{ until: number }>('lease');
       if (existing && existing.until > Date.now()) return 'busy';
       if (slot) await storage.put(`recovery:${slot}`, true);
-      await storage.put('lease', { id: lease, until: Date.now() + 15 * 60_000 });
+      await storage.put('lease', { id: leaseId, until: Date.now() + GENERATION_LEASE_MS });
       return 'generate';
     });
     if (decision !== 'generate') return json({ date, ready: decision === 'ready' }, decision === 'busy' ? 202 : 200);
@@ -143,7 +152,7 @@ export class DailyBriefing {
       if (challenge.date !== date) throw new Error('Generated briefing has the wrong date');
       // Never count the same text as a new day's game.
       const previousDate = new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-      const previous = await briefing(this.env, previousDate).fetch(new Request(`https://briefing/get/${previousDate}`));
+      const previous = await briefingForDate(this.env, previousDate).fetch(new Request(`https://briefing/get/${previousDate}`));
       if (previous.ok) {
         const old = await previous.json() as Challenge;
         if (old.stories.map(s => `${s.headline} ${s.body}`).join(' ') ===
@@ -153,16 +162,23 @@ export class DailyBriefing {
       }
       await this.state.storage.transaction(async (storage) => {
         const owner = await storage.get<{ id: string }>('lease');
-        if (owner?.id !== lease) throw new Error('Generation lease expired');
-        if (!await storage.get('challenge')) await storage.put('challenge', challenge);
-        await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
+        // Expiry permits takeover; it does not cancel the old HTTP/model work.
+        // This owner ID fences that old work out if another attempt took over.
+        if (owner?.id !== leaseId) throw new Error('Generation lease was replaced');
+        if (!await storage.get('challenge')) {
+          await storage.put('challenge', challenge);
+          // A migration seed may have won while generation was awaiting I/O.
+          // Never mark that different stored briefing's metadata as refreshed.
+          await storage.put('sourceMetadataVersion', SOURCE_METADATA_VERSION);
+        }
         await storage.delete('lease');
       });
       console.log(`Briefing ready for ${date}`);
       return json({ date, ready: true });
     } catch (err) {
+      // A failed/stale attempt must not delete its successor's lease.
       await this.state.storage.transaction(async storage => {
-        if ((await storage.get<{ id: string }>('lease'))?.id === lease) await storage.delete('lease');
+        if ((await storage.get<{ id: string }>('lease'))?.id === leaseId) await storage.delete('lease');
       });
       console.error('Fresh briefing generation failed:', err instanceof Error ? err.message : String(err));
       return json({ error: 'Fresh briefing generation failed; the next preparation attempt will retry.' }, 503);
@@ -174,8 +190,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/data/today.json' && (request.method === 'GET' || request.method === 'HEAD')) {
+      // Choose once at request entry: an in-flight response may finish after
+      // 01:00, but must not mix two dates' data or generate on a visitor's request.
       const date = activeChallengeDate();
-      const response = await briefing(env, date).fetch(new Request(`https://briefing/get/${date}`));
+      const response = await briefingForDate(env, date).fetch(new Request(`https://briefing/get/${date}`));
       return request.method === 'HEAD' ? new Response(null, { status: response.status, headers: response.headers }) : response;
     }
     if (url.pathname.startsWith('/_internal/')) {
@@ -183,11 +201,11 @@ export default {
         return json({ error: 'Unauthorized' }, 401);
       }
       const date = url.searchParams.get('date') || preparationDate(Date.now());
-      if (!validDate(date)) return json({ error: 'Invalid challenge date' }, 400);
+      if (!isValidChallengeDate(date)) return json({ error: 'Invalid challenge date' }, 400);
       const action = url.pathname.slice('/_internal/'.length);
       if (!['prepare', 'seed', 'status', 'refresh-sources', 'repair-sources'].includes(action)) return json({ error: 'Not found' }, 404);
       if (request.method !== (action === 'status' ? 'GET' : 'POST')) return json({ error: 'Method not allowed' }, 405);
-      return briefing(env, date).fetch(new Request(`https://briefing/${action}/${date}`, {
+      return briefingForDate(env, date).fetch(new Request(`https://briefing/${action}/${date}`, {
         method: action === 'status' ? 'GET' : 'POST',
         body: ['seed', 'repair-sources'].includes(action) ? await request.text() : undefined,
       }));
@@ -200,7 +218,7 @@ export default {
     const date = recovering ? activeChallengeDate(controller.scheduledTime) : preparationDate(controller.scheduledTime);
     if (recovering && (env.KEYWULF_RECOVERY_ENABLED !== 'true' || !recoverySlot(date, controller.scheduledTime, Date.now()))) return;
     const path = recovering ? `recover/${date}?scheduledTime=${controller.scheduledTime}` : `prepare/${date}`;
-    const result = await briefing(env, date).fetch(new Request(`https://briefing/${path}`, { method: 'POST' }));
+    const result = await briefingForDate(env, date).fetch(new Request(`https://briefing/${path}`, { method: 'POST' }));
     if (!result.ok) throw new Error(`News preparation failed for ${date}: HTTP ${result.status}`);
   },
 };

@@ -15,7 +15,13 @@ export class SourceMetadata {
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || typeof source.title !== 'string') throw new Error();
     } catch { return new Response(null, { status: 400 }); }
     const cached = await this.state.storage.get<{ value: SourceRef; until: number }>('metadata');
-    if (cached && cached.until > Date.now() && isUsableTitle(cached.value.title)) return Response.json({ ...source, ...cached.value });
+    if (cached && cached.until > Date.now()) {
+      // Even failed lookups need their short backoff. Preserve any better title
+      // supplied by this caller instead of replacing it with a cached domain.
+      return Response.json({ ...source, ...cached.value,
+        title: isUsableTitle(cached.value.title) ? cached.value.title : source.title,
+      });
+    }
     const resolved = await resolveSource(source);
     await this.state.storage.put('metadata', {
       value: resolved, until: Date.now() + (isUsableTitle(resolved.title) ? 6 * 3_600_000 : 60_000),

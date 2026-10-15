@@ -1,5 +1,5 @@
 // Build the checked-in sample challenge into public/data/today.json and
-// src/data/sampleChallenge.json (the in-bundle fallback). Run with:
+// src/data/sampleChallenge.json (the test fixture). Run with:
 //   npx tsx scripts/build-sample.ts
 //
 // This guarantees the fixture is assembled and validated by the exact same

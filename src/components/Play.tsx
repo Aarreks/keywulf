@@ -70,9 +70,11 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   // Engine state (mutable, outside React render for per-keystroke speed).
   const idxRef = useRef(0);
   const statusRef = useRef<Int8Array>(new Int8Array(chars.length));
-  const correctPosRef = useRef(0);
-  const correctKsRef = useRef(0);
-  const incorrectKsRef = useRef(0);
+  // WPM counts currently correct positions; accuracy counts every attempt.
+  // Backspacing a correct letter reduces the first, never the cumulative counters.
+  const correctCharsRef = useRef(0);
+  const correctKeystrokesRef = useRef(0);
+  const incorrectKeystrokesRef = useRef(0);
   const startedRef = useRef(false);
   const completedRef = useRef(false);
   const startTimeRef = useRef(0);
@@ -95,7 +97,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   const nowMs = () => performance.now();
   const elapsedMs = useCallback((now: number) => {
     if (!startedRef.current) return elapsedBaseRef.current;
-    const end = completedRef.current ? startTimeRef.current + (lastKeyAtRef.current - startTimeRef.current) : now;
+    const end = completedRef.current ? lastKeyAtRef.current : now;
     return elapsedBaseRef.current + (end - startTimeRef.current);
   }, []);
 
@@ -141,9 +143,9 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       lastKeyAtRef.current = timedOut ? now : lastKeyAtRef.current || now;
       const elapsed = timedOut ? TIME_LIMIT_MS : elapsedMs(now);
       const score = computeScore({
-        correctChars: correctPosRef.current,
-        correctKeystrokes: correctKsRef.current,
-        incorrectKeystrokes: incorrectKsRef.current,
+        correctChars: correctCharsRef.current,
+        correctKeystrokes: correctKeystrokesRef.current,
+        incorrectKeystrokes: incorrectKeystrokesRef.current,
         totalChars: total,
         elapsedMs: elapsed,
       });
@@ -171,7 +173,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       if (inputRef.current) inputRef.current.blur();
       onComplete({
         ...score,
-        correctChars: correctPosRef.current,
+        correctChars: correctCharsRef.current,
         totalChars: total,
         storyCount: challenge.stories.length,
         storiesCleared: cleared,
@@ -190,26 +192,29 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       const i = idxRef.current;
       if (i >= chars.length) return;
       const now = nowMs();
-      if (!startedRef.current) {
-        startedRef.current = true;
-        startTimeRef.current = now;
-        onStart();
-      } else if (elapsedMs(now) >= TIME_LIMIT_MS) {
+      // Check persisted elapsed time too: resuming does not give an expired
+      // run one free character before its clock restarts.
+      if (elapsedMs(now) >= TIME_LIMIT_MS) {
         // Belt and suspenders: the rAF loop normally ends the run at 2:00, but
         // rAF can be throttled/paused (hidden tab); never let a late keystroke
         // extend a run past the limit.
         finish(true);
         return;
       }
+      if (!startedRef.current) {
+        startedRef.current = true;
+        startTimeRef.current = now;
+        onStart();
+      }
       lastKeyAtRef.current = now;
       const expected = chars[i];
       const correct = ch === expected;
       statusRef.current[i] = correct ? 1 : 2;
       if (correct) {
-        correctPosRef.current += 1;
-        correctKsRef.current += 1;
+        correctCharsRef.current += 1;
+        correctKeystrokesRef.current += 1;
       } else {
-        incorrectKsRef.current += 1;
+        incorrectKeystrokesRef.current += 1;
       }
       tracker.current.push({ t: now, correct });
 
@@ -237,16 +242,17 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
 
   const processBack = useCallback(() => {
     if (completedRef.current) return;
+    if (elapsedMs(nowMs()) >= TIME_LIMIT_MS) { finish(true); return; }
     const i = idxRef.current;
     if (i <= 0) return;
     const j = i - 1;
-    if (statusRef.current[j] === 1) correctPosRef.current -= 1;
+    if (statusRef.current[j] === 1) correctCharsRef.current -= 1;
     statusRef.current[j] = 0;
     idxRef.current = j;
     const span = spanRefs.current[j];
     if (span) span.classList.remove('correct', 'incorrect', 'sp');
     positionCaret();
-  }, [positionCaret]);
+  }, [elapsedMs, finish, positionCaret]);
 
   // Unified input handling (works for physical + soft keyboards). We let the
   // textarea accumulate raw typed characters and diff by length, so backspace
@@ -334,9 +340,9 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
           return;
         }
         const minutes = el / 60000;
-        const wpm = minutes > 0 ? correctPosRef.current / 5 / minutes : 0;
-        const totalKs = correctKsRef.current + incorrectKsRef.current;
-        const acc = totalKs > 0 ? (correctKsRef.current / totalKs) * 100 : 100;
+        const wpm = minutes > 0 ? correctCharsRef.current / 5 / minutes : 0;
+        const totalKs = correctKeystrokesRef.current + incorrectKeystrokesRef.current;
+        const acc = totalKs > 0 ? (correctKeystrokesRef.current / totalKs) * 100 : 100;
         const progress = idxRef.current / Math.max(1, chars.length);
         const timeLeft = Math.max(0, Math.ceil((TIME_LIMIT_MS - el) / 1000));
 
@@ -371,8 +377,8 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
           onSnapshot({
             typedCount: idxRef.current,
             characterStatuses: Array.from(statusRef.current.slice(0, idxRef.current)),
-            correctKeystrokes: correctKsRef.current,
-            incorrectKeystrokes: incorrectKsRef.current,
+            correctKeystrokes: correctKeystrokesRef.current,
+            incorrectKeystrokes: incorrectKeystrokesRef.current,
             elapsedMs: el,
           });
         }
@@ -390,15 +396,15 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   useEffect(() => {
     if (resume && resume.typedCount > 0 && resume.typedCount <= chars.length) {
       idxRef.current = resume.typedCount;
-      correctPosRef.current = 0;
+      correctCharsRef.current = 0;
       for (let k = 0; k < resume.typedCount; k++) {
         // Older saves lack per-position data; preserve their previous behavior.
         const status = resume.characterStatuses?.[k] ?? 1;
         statusRef.current[k] = status;
-        if (status === 1) correctPosRef.current += 1;
+        if (status === 1) correctCharsRef.current += 1;
       }
-      correctKsRef.current = resume.correctKeystrokes;
-      incorrectKsRef.current = resume.incorrectKeystrokes;
+      correctKeystrokesRef.current = resume.correctKeystrokes;
+      incorrectKeystrokesRef.current = resume.incorrectKeystrokes;
       elapsedBaseRef.current = resume.elapsedMs;
       // Reflect resumed characters visually + keep the input diff consistent.
       for (let k = 0; k < resume.typedCount; k++) {
@@ -415,7 +421,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       // player stares at 0 WPM / 100% / 2:00 until they type a character.
       const el = resume.elapsedMs;
       const minutes = el / 60000;
-      const wpm = minutes > 0 ? correctPosRef.current / 5 / minutes : 0;
+      const wpm = minutes > 0 ? correctCharsRef.current / 5 / minutes : 0;
       const totalKs = resume.correctKeystrokes + resume.incorrectKeystrokes;
       const acc = totalKs > 0 ? (resume.correctKeystrokes / totalKs) * 100 : 100;
       setHud({
@@ -438,8 +444,8 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         onSnapshot({
           typedCount: idxRef.current,
           characterStatuses: Array.from(statusRef.current.slice(0, idxRef.current)),
-          correctKeystrokes: correctKsRef.current,
-          incorrectKeystrokes: incorrectKsRef.current,
+          correctKeystrokes: correctKeystrokesRef.current,
+          incorrectKeystrokes: incorrectKeystrokesRef.current,
           elapsedMs: elapsedMs(nowMs()),
         });
       }
@@ -448,10 +454,13 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       if (document.visibilityState === 'hidden') saveSnapshot();
     };
     document.addEventListener('visibilitychange', onVis);
+    // Refresh/navigation need not unmount React before the document disappears.
+    window.addEventListener('pagehide', saveSnapshot);
     return () => {
       saveSnapshot();
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', saveSnapshot);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -18,19 +18,21 @@ export interface GenerateOptions {
 }
 
 export async function generateBriefing(options: GenerateOptions): Promise<Challenge> {
-  const API_KEY = options.apiKey;
-  const DATE = options.date;
-  const MODEL = options.model || 'gemini-3.5-flash';
-  const MAX_OUTPUT_TOKENS = options.maxOutputTokens || 16000;
+  const apiKey = options.apiKey;
+  // Publication identity can differ from the actual research date (e.g. a
+  // local preview of tomorrow). Do not prompt the model to report future news.
+  const challengeDate = options.date;
+  const modelName = options.model || 'gemini-3.5-flash';
+  const maxOutputTokens = options.maxOutputTokens || 16000;
   const MAX_ATTEMPTS = 3; // per step: initial + up to 2 controlled retries
 
-  if (!API_KEY) {
+  if (!apiKey) {
     console.error('FATAL: GEMINI_API_KEY is not set. Refusing to generate.');
     console.error('This key is server-side only and must never be a VITE_ variable.');
     throw new Error('Briefing generation failed; no text was published.');
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(DATE)) {
-    console.error(`FATAL: KEYWULF_DATE "${DATE}" is not YYYY-MM-DD.`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(challengeDate)) {
+    console.error(`FATAL: KEYWULF_DATE "${challengeDate}" is not YYYY-MM-DD.`);
     throw new Error('Briefing generation failed; no text was published.');
   }
 
@@ -50,7 +52,7 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
     stories: RawStory[];
   }
 
-  function extractJson(text: string): ModelStories {
+  function parseModelStories(text: string): ModelStories {
     let t = text.trim();
     const fence = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(t);
     if (fence) t = fence[1].trim();
@@ -90,16 +92,16 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
   async function research(ai: GoogleGenAI): Promise<{ notes: string; sources: RawSource[] }> {
     let lastError = '';
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      console.log(`Research attempt ${attempt}/${MAX_ATTEMPTS} (${MODEL}, grounded)...`);
+      console.log(`Research attempt ${attempt}/${MAX_ATTEMPTS} (${modelName}, grounded)...`);
       try {
         const res = await ai.models.generateContent({
-          model: MODEL,
+          model: modelName,
           contents: researchPrompt(todayUtc()),
           config: {
             systemInstruction: SYSTEM_INSTRUCTION,
             tools: [{ googleSearch: {} }],
             temperature: 0.3,
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            maxOutputTokens: maxOutputTokens,
             thinkingConfig: { thinkingBudget: 4096 },
           },
         });
@@ -109,8 +111,8 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
         // from ~2.5k chars of notes). Demand enough material for 12-16 stories.
         if (notes.trim().length < 2500) throw new Error('Research notes too thin to support 12-16 stories');
         if (sources.length === 0) {
-          // No grounding metadata means the model answered from memory - which
-          // for news would be stale or invented. Not acceptable.
+          // Missing citations are insufficient evidence of fresh research,
+          // even if the prose looks plausible. Refuse publication, then retry.
           throw new Error('No grounding sources returned (search tool was not used)');
         }
         console.log(`Research OK: ${notes.length} chars of notes, ${sources.length} grounded sources.`);
@@ -136,7 +138,7 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
         signal: AbortSignal.timeout(10_000),
       });
       const j = (await res.json()) as { date?: string; stories?: Array<{ headline?: string }> };
-      if (!j?.date || j.date >= DATE || !Array.isArray(j.stories)) return [];
+      if (!j?.date || j.date >= challengeDate || !Array.isArray(j.stories)) return [];
       return j.stories.map((s) => String(s.headline ?? '')).filter(Boolean).slice(0, 16);
     } catch {
       return [];
@@ -144,7 +146,7 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
   }
 
   async function main(): Promise<Challenge> {
-    const ai = new GoogleGenAI({ apiKey: API_KEY, httpOptions: { timeout: 90_000 } });
+    const ai = new GoogleGenAI({ apiKey: apiKey, httpOptions: { timeout: 90_000 } });
     const { notes, sources: rawSources } = await research(ai);
     const previousHeadlines = await fetchPreviousHeadlines();
     console.log(
@@ -168,38 +170,40 @@ export async function generateBriefing(options: GenerateOptions): Promise<Challe
     // titles, welded-on site names). Code-verified: the model can only rearrange
     // material it was given, never invent a headline. Non-fatal on failure.
     console.log('Refining source titles with the model...');
-    const sources = await refineTitles(ai, MODEL, fetched);
+    const sources = await refineTitles(ai, modelName, fetched);
     const refinedCount = sources.filter((s, i) => s.title !== fetched[i]?.title).length;
     console.log(`Titles refined: ${refinedCount} adjusted.`);
 
+    // Formatting retries reuse research instead of paying for another search.
+    // Validation errors become feedback; only a completely valid value escapes.
     let feedback: string | undefined;
     const errors: string[] = [];
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      console.log(`Format attempt ${attempt}/${MAX_ATTEMPTS} (${MODEL}, JSON mode)...`);
+      console.log(`Format attempt ${attempt}/${MAX_ATTEMPTS} (${modelName}, JSON mode)...`);
       try {
         const response = await ai.models.generateContent({
-          model: MODEL,
+          model: modelName,
           contents: formatPrompt(notes, todayUtc(), previousHeadlines, feedback),
           config: {
             systemInstruction: SYSTEM_INSTRUCTION,
             responseMimeType: 'application/json',
             temperature: 0.4,
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            maxOutputTokens: maxOutputTokens,
             thinkingConfig: { thinkingBudget: 2048 },
           },
         });
 
         const text = response.text;
         if (!text) throw new Error('Empty model response');
-        const model = extractJson(text);
+        const formattedBriefing = parseModelStories(text);
 
         const challenge = attachStoryPhotos(assembleChallenge({
-          date: DATE,
-          model: MODEL,
+          date: challengeDate,
+          model: modelName,
           generatedAt: new Date().toISOString(),
-          title: model.title,
-          stories: model.stories,
+          title: formattedBriefing.title,
+          stories: formattedBriefing.stories,
           groundingSources: sources,
         }));
 

@@ -4,7 +4,8 @@
 export interface ScoreInput {
   /**
    * Number of corpus characters correctly filled at the moment scoring runs.
-   * For a completed run this equals the corpus length.
+   * Reaching the end may still leave incorrect positions, so this can be less
+   * than the corpus length even when the caret has cleared the whole passage.
    */
   correctChars: number;
   /** Cumulative count of character keystrokes that matched the expected char. */

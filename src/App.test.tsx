@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { fetchTodayChallenge, parseChallenge } from './lib/challengeClient';
-import { loadState } from './lib/storage';
+import { defaultState, loadState, saveState } from './lib/storage';
 import sample from './data/sampleChallenge.json';
 
 vi.mock('./lib/challengeClient', async (importOriginal) => ({
@@ -51,6 +51,40 @@ async function clickButton(label: string) {
 }
 
 describe('visitor flows', () => {
+  it.each(['insertText', 'deleteContentBackward'])('rejects %s when resuming an expired snapshot', async (inputType) => {
+    const state = defaultState();
+    state.inProgress = {
+      date: sample.date, gameNumber: sample.gameNumber, typedCount: 1,
+      characterStatuses: [1], correctKeystrokes: 1, incorrectKeystrokes: 0,
+      elapsedMs: 120_000, updatedAt: new Date().toISOString(),
+    };
+    saveState(state);
+    await renderApp();
+    await clickButton("Resume today's run");
+    await act(async () => {
+      const input = container.querySelector('textarea')!;
+      input.value = inputType === 'insertText' ? input.value + 'x' : '';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType }));
+    });
+    const official = loadState().results[sample.date];
+    expect(official).toBeDefined();
+    expect(official.errors).toBe(0);
+    expect(official.elapsedMs).toBe(120_000);
+  });
+
+  it('saves the most recent keystrokes on pagehide, before the periodic snapshot', async () => {
+    await renderApp();
+    await clickButton('Start');
+    await act(async () => {
+      const input = container.querySelector('textarea')!;
+      input.value = 'xx';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(loadState().inProgress?.characterStatuses).toEqual([2, 2]);
+    expect(loadState().inProgress?.incorrectKeystrokes).toBe(2);
+  });
+
   it('refreshes an idle tab at 01:00 UTC without showing a sample on failure', async () => {
     vi.setSystemTime(new Date(`${sample.date}T00:59:59Z`));
     await renderApp();

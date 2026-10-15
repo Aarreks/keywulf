@@ -16,6 +16,9 @@ dist
 .wrangler
 node_modules/.tmp
 
+# Personal preparation notes; never publish with the project.
+/docs/INTERVIEW_PREP.md
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

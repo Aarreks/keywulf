@@ -7,6 +7,7 @@ import sample from '../src/data/sampleChallenge.json';
 import type { Challenge } from '../src/types';
 import type { SourceRef } from '../scripts/enrichSources';
 import { RECOVERY_CRON } from './recovery';
+import { SOURCE_METADATA_VERSION } from '../scripts/refreshSourceTitles';
 
 vi.mock('../scripts/generateBriefing', () => ({ generateBriefing: vi.fn() }));
 
@@ -72,6 +73,88 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('daily publication', () => {
+  it.each(['wrong date', 'invalid stories'])('does not partially publish %s output and releases its lease', async (failure) => {
+    const invalid = challenge(failure === 'wrong date' ? '2026-10-07' : '2026-10-06');
+    if (failure === 'invalid stories') invalid.stories = [];
+    vi.mocked(generateBriefing).mockResolvedValueOnce(invalid).mockResolvedValueOnce(challenge('2026-10-06'));
+    expect((await admin('prepare', '2026-10-06')).status).toBe(503);
+    expect(await stores.get('2026-10-06')!.get('challenge')).toBeUndefined();
+    expect(await stores.get('2026-10-06')!.get('lease')).toBeUndefined();
+    expect((await admin('prepare', '2026-10-06')).status).toBe(200);
+  });
+
+  it('keeps a request\'s selected date when its storage read crosses 01:00', async () => {
+    await admin('seed', '2026-10-05', challenge('2026-10-05', 'Previous'));
+    await admin('seed', '2026-10-06', challenge('2026-10-06'));
+    const getObject = env.BRIEFINGS.get;
+    let finishRead!: () => void;
+    env.BRIEFINGS.get = id => ({ fetch: async request => {
+      if (id === '2026-10-05') await new Promise<void>(resolve => { finishRead = resolve; });
+      return getObject(id).fetch(request);
+    } });
+    vi.setSystemTime(new Date('2026-10-06T00:59:59.999Z'));
+    const before = worker.fetch(new Request('https://keywulf.com/data/today.json'), env);
+    vi.setSystemTime(new Date('2026-10-06T01:00:00Z'));
+    const after = await worker.fetch(new Request('https://keywulf.com/data/today.json'), env);
+    expect((await after.json() as Challenge).date).toBe('2026-10-06');
+    finishRead();
+    expect((await (await before).json() as Challenge).date).toBe('2026-10-05');
+    expect(generateBriefing).not.toHaveBeenCalled();
+  });
+
+  it('rejects a replaced generator without clearing the new owner\'s lease', async () => {
+    let finishOld!: (value: Challenge) => void;
+    let finishNew!: (value: Challenge) => void;
+    vi.mocked(generateBriefing)
+      .mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve; }));
+    const oldAttempt = admin('prepare', '2026-10-06');
+    await vi.waitFor(() => expect(generateBriefing).toHaveBeenCalledTimes(1));
+    vi.setSystemTime(new Date('2026-10-06T00:36:00Z'));
+    const newAttempt = admin('prepare', '2026-10-06');
+    await vi.waitFor(() => expect(generateBriefing).toHaveBeenCalledTimes(2));
+    const newLease = await stores.get('2026-10-06')!.get('lease');
+    finishOld(challenge('2026-10-06', 'Discarded'));
+    expect((await oldAttempt).status).toBe(503);
+    expect(await stores.get('2026-10-06')!.get('lease')).toEqual(newLease);
+    expect(await stores.get('2026-10-06')!.get('challenge')).toBeUndefined();
+    finishNew(challenge('2026-10-06', 'Winner'));
+    expect((await newAttempt).status).toBe(200);
+    expect(await stores.get('2026-10-06')!.get('challenge')).toEqual(challenge('2026-10-06', 'Winner'));
+  });
+
+  it('does not mark a concurrently seeded briefing as metadata-refreshed', async () => {
+    let finishGeneration!: (value: Challenge) => void;
+    vi.mocked(generateBriefing).mockImplementation(() => new Promise(resolve => { finishGeneration = resolve; }));
+    const pending = admin('prepare', '2026-10-06');
+    await vi.waitFor(() => expect(generateBriefing).toHaveBeenCalledTimes(1));
+    const seeded = challenge('2026-10-06', 'Seeded');
+    await admin('seed', seeded.date, seeded);
+    finishGeneration(challenge('2026-10-06', 'Generated'));
+    expect((await pending).status).toBe(200);
+    expect(await stores.get(seeded.date)!.get('challenge')).toEqual(seeded);
+    expect(await stores.get(seeded.date)!.get('sourceMetadataVersion')).not.toBe(SOURCE_METADATA_VERSION);
+  });
+
+  it('returns a conflict when a refresh races a newer metadata repair', async () => {
+    const original = challenge('2026-10-06');
+    original.sourcePool = [{ title: 'youtube.com', url: 'https://youtube.com/watch?v=abcdefghijk' }];
+    await admin('seed', original.date, original);
+    let finishLookup!: () => void;
+    resolveMetadata.mockImplementation(async () => {
+      await new Promise<void>(resolve => { finishLookup = resolve; });
+      return Response.json({ title: 'Older lookup result', url: 'https://publisher.example/older' });
+    });
+    const pending = admin('refresh-sources', original.date);
+    await vi.waitFor(() => expect(resolveMetadata).toHaveBeenCalledTimes(1));
+    const newer = structuredClone(original);
+    newer.sourcePool[0].title = 'Newer verified article title';
+    expect((await admin('repair-sources', original.date, newer)).status).toBe(200);
+    finishLookup();
+    expect((await pending).status).toBe(409);
+    expect(await stores.get(original.date)!.get('challenge')).toEqual(newer);
+  });
+
   const recovery = async (time: string) => {
     const scheduledTime = Date.parse(`2026-10-06T${time}:00Z`);
     vi.setSystemTime(scheduledTime);
@@ -115,7 +198,7 @@ describe('daily publication', () => {
     expect((await admin('prepare', '2026-10-06')).status).toBe(200);
   });
 
-  it('allows recovery after a crashed preparation lease expires, with no parallel generation', async () => {
+  it('skips an unexpired abandoned lease and recovers after its expiry', async () => {
     await admin('status', '2026-10-06');
     await stores.get('2026-10-06')!.put('lease', { id: 'crashed', until: Date.parse('2026-10-06T01:15:00Z') });
     await recovery('01:05');
@@ -217,7 +300,7 @@ describe('daily publication', () => {
     expect(await (await admin('status', '2026-10-06')).json()).toEqual({ date: '2026-10-06', ready: false });
   });
 
-  it('allows only one concurrent generation and prevents public preparation', async () => {
+  it('allows only one generation under an unexpired lease and prevents public preparation', async () => {
     let release!: (challenge: Challenge) => void;
     vi.mocked(generateBriefing).mockReturnValue(new Promise(resolve => { release = resolve; }));
     const first = admin('prepare', '2026-10-06');

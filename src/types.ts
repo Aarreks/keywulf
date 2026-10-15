@@ -6,7 +6,7 @@
 export interface ChallengeSource {
   /** Human-readable title of the source (publisher or article title). */
   title: string;
-  /** Absolute URL. Never invented; comes from grounding metadata. */
+  /** Absolute citation URL; grounding supplies the initial global source pool. */
   url: string;
   /** Optional publisher-provided preview image, collected with the article title. */
   imageUrl?: string;

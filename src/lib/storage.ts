@@ -1,13 +1,12 @@
 // Local, anonymous persistence for Keywulf.
 //
-// Everything lives in one versioned localStorage blob. There is NO account and
-// NO server; this browser's storage IS the local identity. The schema is
-// versioned and migrated so a future app update never casually destroys a long
-// streak.
+// Player data lives in one versioned localStorage blob, with no account or
+// server-side player record; this browser's storage IS the local identity.
+// Migration recovers older settings and records within the retention window.
 //
 // Key invariants:
-//  - Exactly one OFFICIAL result per challenge date. It is written once and
-//    never overwritten (duplicate-completion protection).
+//  - One OFFICIAL result per retained date in this app state. Repeated completion
+//    cannot overwrite it; independent tabs are not coordinated.
 //  - Practice runs never touch official results, streak, or lifetime stats.
 
 import { computeStreaks, type Streaks } from './streak';
@@ -121,6 +120,8 @@ export function migrate(raw: unknown): KeywulfState {
     }
   }
 
+  // Recover totals before pruning: otherwise migration could lower a best score
+  // or completion count merely because its result aged out of the retained window.
   const totals = coerceTotals(r.totals, results);
   const settings = coerceSettings(r.settings);
   const inProgress = coerceInProgress(r.inProgress);
@@ -249,6 +250,8 @@ export function saveState(state: KeywulfState): void {
   const store = getStorage();
   if (!store) return;
   try {
+    // One serialized write keeps fields together, but is NOT a cross-tab
+    // transaction: two tabs can still overwrite each other's full snapshots.
     const next = { ...state, updatedAt: new Date().toISOString() };
     store.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch {
@@ -267,7 +270,7 @@ export function getResult(state: KeywulfState, date: string): OfficialResult | u
   return state.results[date];
 }
 
-/** Record the start of an official attempt for `date` (idempotent per day). */
+/** Count a start unless a result or an in-progress snapshot already exists. */
 export function markOfficialStarted(state: KeywulfState, date: string): KeywulfState {
   if (state.results[date]) return state; // already completed; nothing to start
   if (state.inProgress && state.inProgress.date === date) return state; // already started
@@ -344,6 +347,8 @@ export interface AggregateStats extends Streaks {
 export function aggregateStats(state: KeywulfState, todayNumber: number): AggregateStats {
   const results = Object.values(state.results);
   const recent = [...results].sort((a, b) => b.gameNumber - a.gameNumber);
+  // Streaks and averages describe retained history (up to 60 days). Only the
+  // explicit totals survive pruning; this is not an all-time streak archive.
   const streaks = computeStreaks(Object.keys(state.results), todayNumber);
   const n = results.length;
   const avgWpm = n > 0 ? results.reduce((s, r) => s + r.wpm, 0) / n : 0;

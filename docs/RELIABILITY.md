@@ -8,8 +8,10 @@ When preparation has not succeeded, automatic recovery tries at **01:05,
 01:25, 01:45, 02:05, 02:25 and 02:45 UTC**. Each slot is claimed transactionally
 in that date's Durable Object before generation starts. Failed delivery replays
 cannot generate again for an already claimed slot. The existing 15-minute lease
-prevents concurrent model calls and lets a later slot recover after a crashed
-invocation. Busy slots skip; they do not queue extra generation. There are at
+suppresses concurrent generation while valid and lets a later slot recover after
+a crashed invocation. Expiry does not cancel old model work; an owner-ID check
+prevents a replaced attempt from committing. Busy slots skip; they do not queue
+extra generation. There are at
 most six recovery pipeline invocations per date, in addition to normal preparation.
 Each pipeline invocation retains its existing bounded internal model retries.
 

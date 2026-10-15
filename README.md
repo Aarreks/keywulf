@@ -5,7 +5,7 @@ Everyone on Earth gets the same briefing, in the same order, on the same UTC day
 and types it as a typing test. Wordle-style daily identity; typing-game feel.
 
 - **Live text**: today's news, deduplicated and ranked by global significance.
-- **One shared generation per day**: Cloudflare prepares news before release.
+- **One shared briefing per day**: Cloudflare prepares news before release.
   Visitors get static HTML/CSS/JS and one stored briefing; playing never calls
   the model. Optional article photos load from their publishers after you type
   each story. Briefing reads use Workers/Durable Objects quotas; static assets
@@ -14,6 +14,9 @@ and types it as a typing test. Wordle-style daily identity; typing-game feel.
   live WPM/accuracy/telemetry, and animations are computed in the browser.
 
 ## Architecture
+
+Start with [the architecture guide](docs/ARCHITECTURE.md) for the request path,
+storage decisions, code links, tested guarantees and remaining limitations.
 
 ```
 Cloudflare preparation (00:20, 00:30, 00:40, 00:50 UTC)
@@ -34,10 +37,11 @@ GitHub Actions → validate + build + deploy app code independently
 - **Publication** (`worker/index.ts`): a SQLite-backed Durable Object stores one
   immutable text per date. Cloudflare attempts preparation at 00:20, 00:30,
   00:40 and 00:50 UTC, skipping the model when
-  a briefing is ready. Generation leases prevent concurrent duplicate calls.
+  a briefing is ready. A valid generation lease suppresses overlapping calls;
+  ownership checks protect publication if an expired lease is taken over.
   At exactly 01:00 UTC, requests select the new date by server clock. No job
   needs to start and no app deployment needs to finish at that moment. Idle
-  browser tabs refresh at the boundary; active typing runs keep their corpus.
+  home screens refresh at the boundary; active typing runs keep their corpus.
   If fresh generation fails, the game shows a retry message and retries
   preparation; it never labels a sample or yesterday's text as new news.
 - **Hosting**: Cloudflare Workers Static Assets plus the small publication
@@ -102,8 +106,11 @@ No account, no tracking. Everything lives in one versioned `localStorage` blob
 (`src/lib/storage.ts`): official results keyed by challenge date, lifetime totals
 (started/completed/best WPM), current + longest streak (derived), settings, and a
 safe in-progress snapshot for resume. The schema is versioned and migrated so an
-update never wipes a long streak. One **official** result per day (never
-overwritten); **Practice** never touches official stats or streak.
+update can recover older records. History retains at most 60 results, so derived
+streaks and averages only cover that window; lifetime completion count and best
+WPM are stored separately. One **official** result per retained day is preserved
+within an app instance; separate tabs can overwrite the whole storage blob.
+**Practice** never touches official stats or streak.
 
 ## Visual system (high level)
 
@@ -111,7 +118,8 @@ A single smoothed `--energy` value (0–1) is computed client-side from rolling
 WPM **and** accuracy (`src/lib/rolling.ts`) — fast-but-sloppy typing does not read
 as excellent. It drives the accent color (cool slate → ember), the caret glow,
 ambient background, and telemetry amplitude, all via CSS custom properties, so it
-costs the same to serve for 1 or 1,000,000 users. Performance state is never
+requires no server request per keystroke. Briefing reads still scale with traffic.
+Performance state is never
 color-only (numerals + progress + graph carry it too). `prefers-reduced-motion`
 and a "reduced intensity" setting are respected.
 

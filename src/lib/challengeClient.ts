@@ -1,6 +1,6 @@
 // Client-side loading + lightweight validation of the daily challenge JSON.
 //
-// The heavy Zod schema lives in the generation pipeline (dev/CI only). The
+// The heavy Zod schema runs in generation/publication on the server. The
 // browser uses this hand-written guard so no validation library ships in the
 // bundle. If anything looks wrong we throw and the UI shows a proper error
 // screen rather than a blank page.
