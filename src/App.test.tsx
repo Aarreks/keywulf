@@ -2,13 +2,19 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
-import { fetchTodayChallenge, parseChallenge } from './lib/challengeClient';
+import { buildCorpus, fetchTodayChallenge, parseChallenge } from './lib/challengeClient';
+import { communityRequest, finishRankedRun, getVerification, startRankedRun } from './lib/communityClient';
+import type { RankedRun } from './lib/leaderboard';
 import { defaultState, loadState, saveState } from './lib/storage';
 import sample from './data/sampleChallenge.json';
 
 vi.mock('./lib/challengeClient', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/challengeClient')>(),
   fetchTodayChallenge: vi.fn(),
+}));
+vi.mock('./lib/communityClient', async original => ({
+  ...await original<typeof import('./lib/communityClient')>(),
+  communityRequest: vi.fn(), finishRankedRun: vi.fn(), getVerification: vi.fn(), startRankedRun: vi.fn(),
 }));
 
 let root: Root;
@@ -24,6 +30,10 @@ beforeEach(() => {
     matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   })));
   localStorage.clear();
+  vi.mocked(communityRequest).mockReset().mockResolvedValue({ enabled: false });
+  vi.mocked(finishRankedRun).mockReset();
+  vi.mocked(startRankedRun).mockReset();
+  vi.mocked(getVerification).mockResolvedValue({ attempt: null, receipt: null, retryAt: null, serverNow: Date.now() });
   vi.mocked(fetchTodayChallenge).mockReset();
   vi.mocked(fetchTodayChallenge).mockResolvedValue(parseChallenge(sample));
   container = document.createElement('div');
@@ -51,6 +61,28 @@ async function clickButton(label: string) {
 }
 
 describe('visitor flows', () => {
+  it('freezes the private leaderboard score on completion, before the player posts it', async () => {
+    const challenge = parseChallenge(sample);
+    challenge.stories = [{ ...challenge.stories[0], headline: 'A.', body: 'B.' }];
+    const corpus = buildCorpus(challenge);
+    const run: RankedRun = { id: 'test-run', date: challenge.date, corpusHash: 'hash', name: 'Typist TEST',
+      status: 'running', startedAt: Date.now(), wpm: null, accuracy: null, verified: false };
+    vi.mocked(fetchTodayChallenge).mockResolvedValue(challenge);
+    vi.mocked(communityRequest).mockResolvedValue({ enabled: true });
+    vi.mocked(startRankedRun).mockResolvedValue(run);
+    vi.mocked(finishRankedRun).mockResolvedValue({ ...run, status: 'unpublished', wpm: 70 });
+    await renderApp(); await clickButton('Start');
+    await act(async () => {
+      const input = container.querySelector('textarea')!;
+      input.value = corpus;
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+    });
+    expect(finishRankedRun).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(finishRankedRun).mock.calls[0].slice(1, 3)).toEqual([challenge.date, corpus]);
+    expect(container.textContent).toContain('Post official result');
+    expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).not.toContain('runs/publish');
+    expect(loadState().results[challenge.date].replay).toBe(corpus);
+  });
   it.each(['insertText', 'deleteContentBackward'])('rejects %s when resuming an expired snapshot', async (inputType) => {
     const state = defaultState();
     state.inProgress = {

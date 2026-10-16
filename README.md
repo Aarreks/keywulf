@@ -12,6 +12,10 @@ and types it as a typing test. Wordle-style daily identity; typing-game feel.
   still serve directly.
 - **All the "dynamic" is client-side**: the performance-reactive color system,
   live WPM/accuracy/telemetry, and animations are computed in the browser.
+- **Optional daily leaderboard**: server-scored first runs under generated aliases,
+  with an image-based speed check for scores of at least 100 WPM. Built with
+  SQLite Durable Objects and an existing Rust/WASM CAPTCHA renderer; no account
+  or extra model call. [Design, verification and rollback](docs/COMMUNITY.md).
 
 ## Architecture
 
@@ -45,7 +49,7 @@ GitHub Actions → validate + build + deploy app code independently
   If fresh generation fails, the game shows a retry message and retries
   preparation; it never labels a sample or yesterday's text as new news.
 - **Hosting**: Cloudflare Workers Static Assets plus the small publication
-  Worker. `wrangler.toml` routes only briefing/private preparation endpoints
+  Worker. `wrangler.toml` routes briefing, community and private preparation endpoints
   through the Worker; the app's static assets are served directly. Briefing
   responses use `Cache-Control: no-store`.
 - **Daily identity**: `gameNumber` is derived deterministically from a documented

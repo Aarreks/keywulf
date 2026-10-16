@@ -31,8 +31,11 @@ import { StatsView } from './components/StatsView';
 import { AboutView } from './components/AboutView';
 import { SettingsDialog } from './components/SettingsDialog';
 import { ErrorScreen, LoadingScreen } from './components/ErrorScreen';
+import { LeaderboardView } from './components/LeaderboardView';
+import { communityRequest, finishRankedRun, startRankedRun } from './lib/communityClient';
+import type { RankedRun } from './lib/leaderboard';
 
-type Phase = 'loading' | 'error' | 'home' | 'playing' | 'result' | 'stats' | 'about';
+type Phase = 'loading' | 'error' | 'home' | 'playing' | 'result' | 'stats' | 'about' | 'leaderboard';
 
 function applyTheme(settings: Settings) {
   const root = document.documentElement;
@@ -54,8 +57,18 @@ export function App() {
   const [resumeSnap, setResumeSnap] = useState<InProgress | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [runNonce, setRunNonce] = useState(0);
+  const [community, setCommunity] = useState(false);
+  const rankedStart = useRef<Promise<RankedRun>>();
+  const rankedFinish = useRef<Promise<RankedRun>>();
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void communityRequest<{ enabled: boolean }>('community', undefined, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setCommunity(value.enabled); }).catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   // Persist helper that keeps our ref in sync.
   const persist = useCallback((next: KeywulfState) => {
@@ -121,6 +134,8 @@ export function App() {
   const startOfficial = useCallback(() => {
     if (!challenge) return;
     persist(markOfficialStarted(stateRef.current, challenge.date));
+    rankedStart.current = undefined;
+    rankedFinish.current = undefined;
     setResumeSnap(null);
     setPractice(false);
     setRunNonce((n) => n + 1);
@@ -130,6 +145,8 @@ export function App() {
   const restartOfficial = useCallback(() => {
     if (!challenge) return;
     persist(clearInProgress(stateRef.current));
+    rankedStart.current = undefined;
+    rankedFinish.current = undefined;
     setResumeSnap(null);
     setPractice(false);
     setRunNonce((n) => n + 1);
@@ -145,6 +162,8 @@ export function App() {
   }, [challenge, resumable]);
 
   const startPractice = useCallback(() => {
+    rankedStart.current = undefined;
+    rankedFinish.current = undefined;
     setResumeSnap(null);
     setPractice(true);
     setRunNonce((n) => n + 1);
@@ -171,6 +190,7 @@ export function App() {
       setLastResult(result);
       if (!practice && challenge && !hasCompleted(stateRef.current, challenge.date)) {
         const official: OfficialResult = {
+          replay: result.replay,
           date: challenge.date,
           gameNumber: challenge.gameNumber,
           wpm: formatWpm(result.wpm),
@@ -183,6 +203,12 @@ export function App() {
           completedAt: new Date().toISOString(),
         };
         persist(recordOfficialResult(stateRef.current, official));
+        // Freeze the private server score now; publishing remains an explicit
+        // action. Reading the result screen must not extend the timed run.
+        if (rankedStart.current && result.replay) {
+          rankedFinish.current = finishRankedRun(rankedStart.current, challenge.date, result.replay, result.elapsedMs);
+          void rankedFinish.current.catch(() => undefined);
+        }
       }
       setPhase('result');
     },
@@ -211,6 +237,7 @@ export function App() {
   else if (!challenge) body = <LoadingScreen />;
   else if (phase === 'stats') body = <StatsView stats={stats} />;
   else if (phase === 'about') body = <AboutView />;
+  else if (phase === 'leaderboard') body = <LeaderboardView date={challenge.date} />;
   else if (phase === 'playing')
     body = (
       <Play
@@ -219,7 +246,11 @@ export function App() {
         settings={state.settings}
         resume={resumeSnap}
         onStart={() => {
-          /* first keystroke; snapshotting handles persistence */
+          if (community && !practice) {
+            rankedStart.current ??= startRankedRun(challenge.date);
+            // Network failures never interrupt typing or local persistence.
+            void rankedStart.current.catch(() => undefined);
+          }
         }}
         onSnapshot={onSnapshot}
         onComplete={onComplete}
@@ -237,6 +268,9 @@ export function App() {
         gamesCompleted={stats.gamesCompleted}
         onPracticeAgain={startPractice}
         onViewStats={() => setPhase('stats')}
+        onLeaderboard={community ? () => setPhase('leaderboard') : undefined}
+        rankedStart={rankedStart.current}
+        rankedFinish={rankedFinish.current}
       />
     );
   // home
@@ -249,6 +283,7 @@ export function App() {
         onViewResult={() => {
           // Rebuild a minimal result view from the stored official result.
           setLastResult({
+            replay: completedResult.replay,
             wpm: completedResult.wpm,
             rawWpm: completedResult.wpm,
             accuracy: completedResult.accuracy,
@@ -301,7 +336,8 @@ export function App() {
           <span>
             Keywulf &middot; <button className="footer__nav" onClick={goHome}>Daily news typeracing</button>
           </span>
-          <span style={{ display: 'inline-flex', gap: 18 }}>
+          <span style={{ display: 'inline-flex', gap: 18, flexWrap: 'wrap' }}>
+            {community && <button className="footer__nav" onClick={() => setPhase('leaderboard')}>Leaderboard</button>}
             <button className="footer__nav" onClick={() => setPhase('about')}>
               About
             </button>

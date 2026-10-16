@@ -5,7 +5,10 @@ import { activeChallengeDate, preparationDate } from '../src/lib/publication';
 import type { SourceRef } from '../scripts/enrichSources';
 import { refreshSourceTitles, sourceRepairIdentity, SOURCE_METADATA_VERSION } from '../scripts/refreshSourceTitles';
 import { RECOVERY_CRON, recoverySlot } from './recovery';
+import { handleCommunity } from './verificationRoutes';
 export { SourceMetadata } from './sourceMetadata';
+export { SpeedVerification } from './speedVerification';
+export { DailyLeaderboard } from './leaderboard';
 
 // Structural types for the small subset of Cloudflare bindings used here.
 export interface Storage {
@@ -25,6 +28,10 @@ export interface Env {
   GEMINI_MODEL?: string;
   KEYWULF_ADMIN_TOKEN: string;
   KEYWULF_RECOVERY_ENABLED?: string;
+  KEYWULF_COMMUNITY_ENABLED?: string;
+  VERIFICATIONS?: { idFromName(name: string): unknown; get(id: unknown): Fetcher };
+  LEADERBOARDS?: { idFromName(name: string): unknown; get(id: unknown): Fetcher };
+  VERIFICATION_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
 }
 
 function json(value: unknown, status = 200): Response {
@@ -197,6 +204,9 @@ export class DailyBriefing {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) {
+      return handleCommunity(request, env);
+    }
     if (url.pathname === '/data/today.json' && (request.method === 'GET' || request.method === 'HEAD')) {
       // Choose once at request entry: an in-flight response may finish after
       // 01:00, but must not mix two dates' data or generate on a visitor's request.

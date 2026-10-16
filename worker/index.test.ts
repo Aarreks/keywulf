@@ -10,6 +10,7 @@ import { RECOVERY_CRON } from './recovery';
 import { SOURCE_METADATA_VERSION } from '../scripts/refreshSourceTitles';
 
 vi.mock('../scripts/generateBriefing', () => ({ generateBriefing: vi.fn() }));
+vi.mock('./verificationImage', () => ({ createVerificationPassage: vi.fn(), renderVerificationImage: vi.fn() }));
 
 class MemoryStorage implements Storage {
   data = new Map<string, unknown>();

@@ -6,6 +6,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      community_enabled:
+        description: 'Leaderboard and speed verification (disable for a reversible rollback)'
+        type: choice
+        options: ['true', 'false']
+        default: 'true'
 
 concurrency:
   group: keywulf-deploy
@@ -55,4 +61,5 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           KEYWULF_MIGRATE_LIVE: ${{ steps.live.outputs.preserved }}
+          KEYWULF_COMMUNITY_ENABLED: ${{ inputs.community_enabled || vars.KEYWULF_COMMUNITY_ENABLED || 'true' }}
         run: node scripts/deploy-cloudflare.mjs

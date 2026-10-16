@@ -420,3 +420,8 @@ h3 {
 :root.reduced-intensity body::before {
   display: none;
 }
+
+/* Functional image/input sizing; layout, panels and controls use existing styles. */
+.verification-image { display: block; width: 100%; height: auto; }
+.verification-input { display: block; width: 100%; min-height: 140px; padding: 12px; resize: vertical; font: 18px/1.5 var(--font-mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.verification-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

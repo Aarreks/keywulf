@@ -9,7 +9,7 @@ module.exports = {
   parser: '@typescript-eslint/parser',
   parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
   plugins: ['@typescript-eslint', 'react-hooks', 'react-refresh'],
-  ignorePatterns: ['dist', 'node_modules', '*.cjs', 'coverage'],
+  ignorePatterns: ['dist', 'node_modules', '*.cjs', 'coverage', 'worker/captcha', 'third_party/captcha/target'],
   rules: {
     'react-hooks/rules-of-hooks': 'error',
     'react-hooks/exhaustive-deps': 'warn',

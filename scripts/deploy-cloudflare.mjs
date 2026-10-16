@@ -21,8 +21,10 @@ function wrangler(args, input) {
   if (result.status !== 0) throw new Error(`Wrangler ${args[0]} failed`);
 }
 
+const communityEnabled = process.env.KEYWULF_COMMUNITY_ENABLED || 'true';
+if (!['true', 'false'].includes(communityEnabled)) throw new Error('KEYWULF_COMMUNITY_ENABLED must be true or false');
 wrangler(['secret', 'bulk'], JSON.stringify(secrets));
-wrangler(['deploy']);
+wrangler(['deploy', '--var', `KEYWULF_COMMUNITY_ENABLED:${communityEnabled}`]);
 
 async function admin(action, date, payload) {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -74,3 +76,10 @@ const corpusIdentity = c => JSON.stringify({
 });
 if (corpusIdentity(beforeRepair) !== corpusIdentity(afterRepair)) throw new Error('Title refresh changed the published game');
 console.log(`Verified live briefing for ${activeDate}. Future releases switch at 01:00 UTC without a deployment.`);
+const capability = await fetch(`https://keywulf.com/api/community?v=${Date.now()}`, { cache: 'no-store' });
+if (!capability.ok || (await capability.json()).enabled !== (communityEnabled === 'true')) throw new Error('Community feature flag verification failed');
+if (communityEnabled === 'true') {
+  const board = await fetch(`https://keywulf.com/api/leaderboard?date=${activeDate}`, { cache: 'no-store' });
+  if (!board.ok || !Array.isArray((await board.json()).entries)) throw new Error('Leaderboard read verification failed');
+}
+console.log(`Verified leaderboard/verification ${communityEnabled === 'true' ? 'enabled' : 'disabled'}.`);

@@ -1,7 +1,7 @@
 # Cloudflare Workers Static Assets configuration for Keywulf.
 #
 # Static app assets remain served directly. Only the briefing endpoint and
-# private preparation endpoints invoke Worker code. Daily news is prepared
+# private preparation and community endpoints invoke Worker code. Daily news is prepared
 # ahead of time and stored independently of app deployments.
 #
 # Docs: https://developers.cloudflare.com/workers/static-assets/
@@ -13,7 +13,7 @@ compatibility_date = "2026-10-01"
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-run_worker_first = ["/data/today.json", "/_internal/*"]
+run_worker_first = ["/data/today.json", "/_internal/*", "/api/*"]
 # Keywulf is a single-page app (view state lives in the client, not the URL),
 # so unknown paths fall back to index.html.
 not_found_handling = "single-page-application"
@@ -26,6 +26,14 @@ class_name = "DailyBriefing"
 name = "SOURCES"
 class_name = "SourceMetadata"
 
+[[durable_objects.bindings]]
+name = "VERIFICATIONS"
+class_name = "SpeedVerification"
+
+[[durable_objects.bindings]]
+name = "LEADERBOARDS"
+class_name = "DailyLeaderboard"
+
 [[migrations]]
 tag = "daily-publication-v1"
 new_sqlite_classes = ["DailyBriefing"]
@@ -34,6 +42,17 @@ new_sqlite_classes = ["DailyBriefing"]
 tag = "source-metadata-v1"
 new_sqlite_classes = ["SourceMetadata"]
 
+[[migrations]]
+tag = "speed-verification-v1"
+new_sqlite_classes = ["SpeedVerification", "DailyLeaderboard"]
+
+# A coarse per-location abuse limit; the object enforces the precise
+# three-passages-per-15-minutes budget for each anonymous browser.
+[[ratelimits]]
+name = "VERIFICATION_LIMITER"
+namespace_id = "10761016"
+simple = { limit = 120, period = 60 }
+
 [triggers]
 # Prepare the current UTC date at 00:20, 00:30, 00:40 and 00:50 UTC.
 # Already prepared dates return immediately without another model call.
@@ -41,3 +60,4 @@ crons = ["20,30,40,50 0 * * *", "5,25,45 1,2 * * *"]
 
 [vars]
 KEYWULF_RECOVERY_ENABLED = "true"
+KEYWULF_COMMUNITY_ENABLED = "true"

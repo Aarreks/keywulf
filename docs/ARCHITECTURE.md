@@ -28,6 +28,8 @@ Player browser
   +--> Cloudflare Static Assets -> React / CSS / self-hosted fonts
   +--> GET /data/today.json -> Worker clock -> date's DailyBriefing -> JSON
   +--> localStorage: this browser's results, settings and resume snapshot
+  +--> /api/runs/* -> date's DailyLeaderboard (private score -> opt-in top 50)
+  |                    `--> browser's SpeedVerification -> Rust/WASM PNG
   `--> publisher images: optional, revealed after completed stories
 
 GitHub freshness check -> public JSON, read-only -> failed job if unavailable
@@ -75,7 +77,9 @@ GitHub freshness check -> public JSON, read-only -> failed job if unavailable
 | --- | --- |
 | Published briefing, lease, claimed recovery slots, metadata version | A date's SQLite-backed `DailyBriefing`. Storage survives object eviction and code deployment; transactions coordinate competing callers. The code uses its key/value API, not application SQL tables. |
 | Source title, final URL and optional image metadata | `SourceMetadata`, keyed by SHA-256 of the input URL. Reuse is allowed for six hours for usable titles, one minute for unsuccessful resolution. Separate object calls also separate publisher-fetch request budgets. |
-| Results, totals, settings, in-progress run | One versioned browser `localStorage` blob. No account, cross-device sync, server score verification or leaderboard is implemented. |
+| Results, totals, settings, in-progress run | One versioned browser `localStorage` blob; ordinary gameplay remains independent of the leaderboard. No account or cross-device sync. |
+| Private timed first run and opt-in daily top 50 | A date's `DailyLeaderboard` SQLite tables, separate from publication. Server replay scoring, indexed ranking and 35-day retention. |
+| Image passage, timer, attempt budget and speed receipt | A browser's `SpeedVerification` object. Private answer never enters JSON; the server clock cannot be reset by a reload. |
 | Cursor, per-character correctness, clocks, rolling samples | React refs in the mounted `Play` instance. Frequent engine updates do not require a React render for every character. The HUD updates at a configured 90 ms interval. |
 | HTML/CSS/JS/fonts and local sample JSON | Build/static assets. The checked-in JSON supports local development; the production Worker intercepts the daily route and never substitutes that sample on failure. |
 
@@ -158,6 +162,12 @@ and skips the obsolete repair.
   already deployed code. The retry loop is not a complete deployment transaction.
 
 ## Verification
+
+The optional daily leaderboard freezes a server-scored replay at completion,
+then publishes only on request. Scores of at least 100 WPM require a separate
+image transcription check. This supports typing ability, not human identity or
+proof that the original daily replay was human. Request paths, concurrency rules,
+limits, tests and the feature-flag rollback are in [COMMUNITY.md](COMMUNITY.md).
 
 Run `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` and
 `npm run validate:challenge`; `npx wrangler deploy --dry-run` bundles the Worker

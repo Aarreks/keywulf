@@ -7,6 +7,8 @@ import { ShareIcon, CheckIcon } from './icons';
 import { RunGraph } from './RunGraph';
 import { Sources } from './Sources';
 import { StoryPhotos } from './StoryPhotos';
+import { CommunityResult } from './CommunityResult';
+import type { RankedRun } from '../lib/leaderboard';
 
 interface Props {
   challenge: Challenge;
@@ -18,6 +20,9 @@ interface Props {
   gamesCompleted: number;
   onPracticeAgain: () => void;
   onViewStats: () => void;
+  onLeaderboard?: () => void;
+  rankedStart?: Promise<RankedRun>;
+  rankedFinish?: Promise<RankedRun>;
 }
 
 export function Result({
@@ -30,6 +35,9 @@ export function Result({
   gamesCompleted,
   onPracticeAgain,
   onViewStats,
+  onLeaderboard,
+  rankedStart,
+  rankedFinish,
 }: Props) {
   const [shareState, setShareState] = useState<'idle' | 'shared' | 'copied' | 'failed'>('idle');
   const [showSources, setShowSources] = useState(false);
@@ -88,6 +96,9 @@ export function Result({
       </div>
 
       <RunGraph samples={result.samples} />
+
+      {!practice && onLeaderboard && <CommunityResult key={challenge.date} date={challenge.date}
+        replay={result.replay} elapsedMs={result.elapsedMs} start={rankedStart} finish={rankedFinish} onLeaderboard={onLeaderboard} />}
 
       <StoryPhotos stories={challenge.stories} completed={result.storiesCleared} />
 

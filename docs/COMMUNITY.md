@@ -1,0 +1,119 @@
+# Leaderboard and speed verification
+
+The daily leaderboard is anonymous and opt-in. Finishing an official run freezes
+a private server score immediately; posting it is a separate action. Practice,
+local results and streaks continue working when the community service is down.
+The interface reuses the existing result panels, buttons and score-list styles.
+
+## Request path and guarantees
+
+```text
+first keystroke -> POST /api/runs/start -> date's DailyLeaderboard (SQLite)
+finish typing  -> POST /api/runs/finish -> private, immutable first result
+  below 100 WPM -> user posts -> public top 50
+  at least 100 -> SpeedVerification object for this browser
+                 prepare PNG -> start server clock -> reveal image
+                 submit transcription -> receipt -> user posts checked score
+```
+
+- [handleCommunity](../worker/verificationRoutes.ts) creates an HttpOnly,
+  SameSite=Strict anonymous cookie, checks write origins, limits bodies to 64 KB,
+  and applies a coarse 120-requests/minute IP limit. The platform rate limit is
+  per location, not a globally exact budget. Only today/yesterday are exposed.
+- [DailyLeaderboard](../worker/leaderboard.ts) takes the corpus from the stored
+  briefing, not the client. One SQLite primary key per browser prevents retries,
+  reloads or concurrent tabs from replacing its first start/result. It recomputes
+  scoring from a bounded character/backspace replay. Corrections preserve the
+  accuracy history. The longer of server elapsed time and reported active time
+  determines ranking, capped at the two-minute gameplay limit. A finish must
+  arrive within 125 seconds of starting. Pauses count against ranking even though
+  ordinary local gameplay can pause. Network latency can reduce ranked speed.
+- [App.onComplete](../src/App.tsx) sends the replay immediately, before the user
+  decides whether to publish. [finishRankedRun](../src/lib/communityClient.ts)
+  retries one unknown/server-error outcome with the identical payload. The
+  server stores its hash; different replacement submissions get HTTP 409.
+  A refresh during a request can still lose the acknowledgement; a subsequent
+  private status read recovers a committed result. An unsent finish cannot be
+  reconstructed with trusted completion time after the deadline.
+- [SpeedVerification](../worker/speedVerification.ts) stores the answer privately.
+  Its JSON uses an explicit allowlist. The PNG is available only to the owning
+  cookie after starting the non-pausable 60-second server timer. A start retry
+  does not restart it. One active passage and three new passages per 15 minutes
+  are enforced transactionally. Identical finish retries recover the saved
+  outcome for 15 minutes; another answer cannot overwrite it.
+- The check requires `ceil(dailyWpm * 0.75)` WPM and at least 95% matching text.
+  [scoreVerification](../src/lib/verification.ts) normalizes case/whitespace and
+  uses edit distance, so one missing letter does not shift every later letter.
+  Net matching characters determine measured speed. Claims above 400 WPM are
+  rejected. The server derives the claim from the private daily result.
+- Publishing a fast score reads a receipt through a private binding and checks
+  its date, corpus hash, expiry and speed. A browser cannot supply its own badge.
+  The top 50 use full-precision WPM, then accuracy, completion time and stable ID.
+  Public JSON exposes only alias, result ID, WPM, accuracy and check status.
+- Date objects remove records after 35 days. Verification images/answers are
+  erased on completion/cancellation and expired state is removed by alarms;
+  successful receipts expire after 30 days. Briefings have separate ownership
+  and retention. No user score is written into publication storage.
+
+## What this does and does not establish
+
+The image renderer is adapted from an existing Workers-compatible Rust/WASM
+CAPTCHA generator; see [provenance and rebuild instructions](../third_party/captcha/NOTICE.md).
+It runs locally in the Worker: no image service or extra model call is needed.
+The frontend receives pixels, never the answer in JSON, DOM text or PNG metadata.
+
+A separate timed transcription supports typing ability. It is **not proof that
+the daily run was human**. OCR, scripted replays and assisted input remain possible.
+An anonymous cookie is not an account: clearing it or using another browser can
+create another entry. The server cannot prove the client's actual keystroke times.
+No prize-bearing/identity-grade anti-cheat is claimed. The visual check is not
+accessible to everyone; opting out preserves the local game and streak.
+There is no custom alias, cross-device identity, all-time ranking or moderation
+console. These are deliberate scope limits, not implied existing capabilities.
+
+One date is one ranking writer. SQLite indexes avoid sorting every run in
+application memory, and static assets still bypass the Worker. This has not been
+load-tested at production scale. CPU/storage/request costs grow with usage;
+there is no new paid API call per check and no claimed fixed daily cost.
+
+## Verify locally
+
+1. Run `npm ci`, `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`,
+   `npm run validate:challenge`, and `npx wrangler deploy --dry-run`.
+2. Start `npx wrangler dev --local`. Use a separate local persistence directory
+   for disposable integration tests. Do not use `--remote` or real model keys.
+   The checked-in fixture alone is for Vite; the Worker needs a seeded briefing.
+   Its existing authenticated `/_internal/seed?date=YYYY-MM-DD` endpoint can seed
+   a synthetic fixture with a matching date/game number using a local-only admin
+   token. Never seed test scores or fixture briefings into production.
+3. Play locally. Confirm the result is saved privately before posting. Below
+   100 WPM, post it and refresh the board. A 100+ result should require a separate
+   passage, stay absent from the board until passed/published, and retain the
+   original timer after refreshing. Cancelling does not change the local result.
+4. Set `KEYWULF_COMMUNITY_ENABLED = "false"` locally and confirm
+   `/api/community` reports false, community routes return 503, and the daily
+   briefing and ordinary play still work. Restore true; stored scores survive.
+
+[community.test.ts](../worker/community.test.ts) uses real in-memory SQLite,
+fake clocks and serialized storage transactions. It covers ownership, retries,
+ranking, private posting, expiry, receipt binding and request validation.
+[captcha.test.ts](../worker/captcha.test.ts) decodes a PNG rendered by the committed
+WASM binary. [CommunityResult.test.tsx](../src/components/CommunityResult.test.tsx)
+covers stale reads, image focus, timing, paste prevention and network retries.
+These are not a Cloudflare availability guarantee or an OCR resistance benchmark.
+
+## Reversible deployment
+
+In GitHub Actions, open **Deploy app → Run workflow → main**, choose
+`community_enabled: false`, and run it. This deploys the same application with
+the feature disabled; normal daily publication and recovery schedules remain.
+Check `/api/community` returns `{"enabled":false}` and today's briefing is still
+available. To keep future pushes disabled too, set the repository Actions variable
+`KEYWULF_COMMUNITY_ENABLED` to `false`; manual workflow input takes precedence.
+Set both back to `true` and rerun to restore access to retained scores.
+
+The migration adds two independent SQLite Durable Object classes. Keep their
+bindings, exports and migration when disabling. A wholesale Git revert to a
+version that lacks the classes is not the safe rollback path after migration;
+removing classes/data requires a separate deliberate migration. Disabling the
+flag leaves data to its normal expiry rather than deleting it.

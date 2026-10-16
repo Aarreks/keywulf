@@ -8,6 +8,8 @@ import type { InProgress, Settings } from '../lib/storage';
 import { StoryPhotos } from './StoryPhotos';
 
 export interface RunResult extends Score {
+  /** Bounded input history for optional server-side leaderboard scoring. */
+  replay?: string;
   correctChars: number;
   totalChars: number;
   storyCount: number;
@@ -75,6 +77,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
   const correctCharsRef = useRef(0);
   const correctKeystrokesRef = useRef(0);
   const incorrectKeystrokesRef = useRef(0);
+  const replayRef = useRef<string | undefined>(resume ? resume.replay : '');
   const startedRef = useRef(false);
   const completedRef = useRef(false);
   const startTimeRef = useRef(0);
@@ -173,6 +176,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
       if (inputRef.current) inputRef.current.blur();
       onComplete({
         ...score,
+        replay: replayRef.current,
         correctChars: correctCharsRef.current,
         totalChars: total,
         storyCount: challenge.stories.length,
@@ -207,6 +211,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         onStart();
       }
       lastKeyAtRef.current = now;
+      if (replayRef.current !== undefined) replayRef.current = replayRef.current.length < 12_000 ? replayRef.current + ch : undefined;
       const expected = chars[i];
       const correct = ch === expected;
       statusRef.current[i] = correct ? 1 : 2;
@@ -246,6 +251,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     const i = idxRef.current;
     if (i <= 0) return;
     const j = i - 1;
+    if (replayRef.current !== undefined) replayRef.current = replayRef.current.length < 12_000 ? replayRef.current + '\b' : undefined;
     if (statusRef.current[j] === 1) correctCharsRef.current -= 1;
     statusRef.current[j] = 0;
     idxRef.current = j;
@@ -375,7 +381,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
         if (now - lastSnapRef.current >= SNAPSHOT_INTERVAL) {
           lastSnapRef.current = now;
           onSnapshot({
-            typedCount: idxRef.current,
+            typedCount: idxRef.current, replay: replayRef.current,
             characterStatuses: Array.from(statusRef.current.slice(0, idxRef.current)),
             correctKeystrokes: correctKeystrokesRef.current,
             incorrectKeystrokes: incorrectKeystrokesRef.current,
@@ -442,7 +448,7 @@ export function Play({ challenge, settings, resume, onStart, onSnapshot, onCompl
     const saveSnapshot = () => {
       if ((startedRef.current || resume) && !completedRef.current) {
         onSnapshot({
-          typedCount: idxRef.current,
+          typedCount: idxRef.current, replay: replayRef.current,
           characterStatuses: Array.from(statusRef.current.slice(0, idxRef.current)),
           correctKeystrokes: correctKeystrokesRef.current,
           incorrectKeystrokes: incorrectKeystrokesRef.current,

@@ -36,9 +36,13 @@ export function AboutView() {
 
         <h2>Your data</h2>
         <p>
-          There is no account and no server tracking. Your streak, history, and settings live only in
+          Your streak, history, and settings live only in
           this browser's local storage. A different browser or device will have its own separate
-          history, and clearing site data will erase local progress. Keywulf does not use device
+          history, and clearing site data will erase local progress. The optional leaderboard uses
+          an anonymous browser cookie and stores timed runs and speed-check receipts on the server.
+          Posting makes your generated alias, speed, accuracy and check badge public for up to 35 days.
+          A separate speed check supports typing ability; it does not prove the original run was human.
+          Keywulf does not use device
           fingerprinting or third-party analytics.
         </p>
       </div>

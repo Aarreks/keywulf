@@ -1,7 +1,7 @@
 // Local, anonymous persistence for Keywulf.
 //
 // Player data lives in one versioned localStorage blob, with no account or
-// server-side player record; this browser's storage IS the local identity.
+// server-side account. Optional leaderboard runs use a separate anonymous cookie.
 // Migration recovers older settings and records within the retention window.
 //
 // Key invariants:
@@ -32,6 +32,7 @@ export interface Settings {
 }
 
 export interface OfficialResult {
+  replay?: string;
   date: string; // YYYY-MM-DD (UTC) - the challenge day
   gameNumber: number;
   wpm: number; // display WPM (rounded)
@@ -49,6 +50,7 @@ export interface OfficialResult {
 
 /** A lightweight snapshot for safely resuming today's in-progress attempt. */
 export interface InProgress {
+  replay?: string;
   date: string;
   gameNumber: number;
   /** Number of characters already typed into the corpus. */
@@ -144,6 +146,7 @@ function coerceResult(date: string, val: unknown): OfficialResult | null {
   const num = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
   return {
     date,
+    replay: typeof v.replay === 'string' && v.replay.length <= 12_000 ? v.replay : undefined,
     gameNumber: num(v.gameNumber),
     wpm: num(v.wpm),
     accuracy: Math.max(0, Math.min(1, num(v.accuracy))),
@@ -200,7 +203,7 @@ function coerceInProgress(val: unknown): InProgress | null {
     ? v.characterStatuses as number[]
     : undefined;
   return {
-    date: v.date,
+    date: v.date, replay: typeof v.replay === 'string' && v.replay.length <= 12_000 ? v.replay : undefined,
     gameNumber: num(v.gameNumber),
     typedCount,
     characterStatuses,
