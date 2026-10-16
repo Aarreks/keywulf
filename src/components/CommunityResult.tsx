@@ -40,7 +40,23 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const submittedElapsed = useRef<number>();
   const blockedText = useRef<string | null>(null);
   const typingClock = useRef<{ id: string; at: number }>();
+  const readyDeadline = useRef<{ id: string; at: number }>();
   const attempt = verification?.attempt;
+  const latestAttempt = useRef(attempt);
+  latestAttempt.current = attempt;
+
+  const expireAttempt = useCallback((id: string, message = 'This passage expired. Request a new passage.') => {
+    const current = latestAttempt.current;
+    // A late rejection for an old passage must not retire its replacement or
+    // overwrite a successful completion of the same passage.
+    if (current?.id !== id || !['ready', 'running'].includes(current.status)) return;
+    deadline.current = 0;
+    submission.current = null;
+    submittedElapsed.current = undefined;
+    setStarting(false); setRemainingMs(0);
+    setVerification(status => status?.attempt?.id === id ? { ...status, attempt: { ...status.attempt, status: 'expired' } } : status);
+    setError(message);
+  }, []);
 
   useEffect(() => {
     const active = new AbortController();
@@ -57,6 +73,17 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   }, [date, finish]);
 
   useEffect(() => { if (imageReady && ['ready', 'running'].includes(attempt?.status || '')) input.current?.focus(); }, [imageReady, attempt?.status]);
+
+  useEffect(() => {
+    if (!attempt || !verification || attempt.status !== 'ready' || starting) return;
+    // The readiness TTL is separate from typing time. Retire an abandoned image
+    // even if the player has not typed; the server still decides boundary races.
+    if (readyDeadline.current?.id !== attempt.id) {
+      readyDeadline.current = { id: attempt.id, at: performance.now() + Math.max(0, attempt.expiresAt - verification.serverNow) };
+    }
+    const timer = setTimeout(() => expireAttempt(attempt.id), Math.max(0, readyDeadline.current.at - performance.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [attempt, verification, starting, expireAttempt]);
 
   const syncMirror = useCallback(() => {
     if (!input.current || !mirror.current) return;
@@ -88,7 +115,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     return () => clearInterval(timer);
   }, [attempt, verification, starting]);
 
-  const perform = useCallback(async (operation: (signal: AbortSignal) => Promise<void>) => {
+  const perform = useCallback(async (operation: (signal: AbortSignal) => Promise<void>, verificationId?: string) => {
     if (inFlight.current || !controller.current) return;
     const active = controller.current;
     revision.current++;
@@ -96,6 +123,9 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     try { await operation(active.signal); }
     catch (err) {
       if (!active.signal.aborted) {
+        if (verificationId && err instanceof CommunityError && [404, 410].includes(err.status)) {
+          expireAttempt(verificationId, err.message);
+        }
         if (err instanceof CommunityError && err.status === 400 && submission.current !== null) {
           blockedText.current = submission.current;
           submission.current = null;
@@ -105,7 +135,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
       }
     }
     finally { inFlight.current = false; if (!active.signal.aborted) setBusy(false); }
-  }, []);
+  }, [expireAttempt]);
 
   const submit = useCallback(async (id: string, text: string, signal: AbortSignal) => {
     submission.current ??= text;
@@ -126,7 +156,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     // to the browser or making a server request for every guessed character.
     void verificationTextHash(attempt.id, candidate).then(hash => {
       if (!stale && hash === attempt.textHash && performance.now() <= deadline.current) {
-        void perform(signal => submit(attempt.id, answer, signal));
+        void perform(signal => submit(attempt.id, answer, signal), attempt.id);
       }
     }).catch(() => { if (!stale) setError('Completion check unavailable. Please request a new passage.'); });
     return () => { stale = true; };
@@ -177,6 +207,10 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
           setFeedback({ ...result, text });
         }
       } catch (err) {
+        if (!stopped && err instanceof CommunityError && [404, 410].includes(err.status)) {
+          expireAttempt(id, err.message);
+          return;
+        }
         // Feedback is optional. Back off instead of hammering a slow service or
         // consuming the submission budget while the player keeps typing.
         nextCheckAt = performance.now() + (err instanceof CommunityError && err.status === 429 ? 1000 : 800);
@@ -186,7 +220,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     scheduleFeedback.current = schedule;
     schedule();
     return () => { stopped = true; scheduleFeedback.current = undefined; clearTimeout(timer); clearTimeout(timeout); request?.abort(); };
-  }, [attempt, imageReady]);
+  }, [attempt, imageReady, expireAttempt]);
   useEffect(() => { scheduleFeedback.current?.(); }, [answer]);
 
   function changeAnswer(text: string) {
@@ -201,14 +235,18 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     // Typing continues while start is in flight. The server makes retries keep
     // the original start time, and autosubmission waits for its acknowledgement.
     void perform(async signal => {
-      let status: VerificationStatus;
-      try { status = await communityRequest<VerificationStatus>('verification/start', { id: attempt.id }, signal); }
-      catch (err) {
-        if (err instanceof CommunityError && err.status < 500) throw err;
-        status = await communityRequest<VerificationStatus>('verification/start', { id: attempt.id }, signal);
+      try {
+        let status: VerificationStatus;
+        try { status = await communityRequest<VerificationStatus>('verification/start', { id: attempt.id }, signal); }
+        catch (err) {
+          if (err instanceof CommunityError && err.status < 500) throw err;
+          status = await communityRequest<VerificationStatus>('verification/start', { id: attempt.id }, signal);
+        }
+        if (!signal.aborted && latestAttempt.current?.id === attempt.id && ['ready', 'running'].includes(latestAttempt.current.status)) setVerification(status);
+      } finally {
+        if (!signal.aborted) setStarting(false);
       }
-      if (!signal.aborted) { setVerification(status); setStarting(false); }
-    });
+    }, attempt.id);
   }
   const canCheck = run?.status === 'pending';
   const receipt = verification?.receipt;
@@ -291,7 +329,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
           </div>
           <p className="sr-only" id="verification-feedback" role="status">{wrongOffset >= 0 ? `Check character ${wrongOffset + 1}.` : ''}</p>
           {busy && submission.current !== null && <p role="status">Checking speed…</p>}
-          {!busy && submission.current !== null && error && <button className="btn" onClick={() => void perform(signal => submit(attempt.id, submission.current!, signal))}>Retry submission</button>}
+          {!busy && submission.current !== null && error && <button className="btn" onClick={() => void perform(signal => submit(attempt.id, submission.current!, signal), attempt.id)}>Retry submission</button>}
         </div>
         {((attempt.status === 'running' && remainingMs === 0) || error) && <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
           const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
@@ -301,7 +339,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
       <button className="btn btn--ghost" disabled={busy} onClick={() => void perform(async signal => {
         const status = await communityRequest<VerificationStatus>('verification/cancel', { id: attempt.id }, signal);
         if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); }
-      })}>Cancel speed check</button>
+      }, attempt.id)}>Cancel speed check</button>
       <p className="start__hint">The image-based check is visual. It is optional; your daily result and streak remain saved.</p>
     </div>}
     <button className="btn btn--ghost" onClick={onLeaderboard}>View daily leaderboard</button>

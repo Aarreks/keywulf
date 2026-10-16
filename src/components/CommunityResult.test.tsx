@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CommunityResult } from './CommunityResult';
-import { communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
+import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
 import type { VerificationStatus } from '../lib/verification';
 import { normalizeVerificationText, verificationTextHash, verificationTimeLimitMs } from '../lib/verification';
@@ -92,6 +92,80 @@ it('automatically submits a full exact match once, but not a same-length typo', 
   expect(communityRequest).toHaveBeenCalledTimes(1);
   expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/finish');
   expect(container.textContent).toContain('Publish checked score');
+});
+
+it('retires an idle passage when its five-minute readiness window expires', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready', startedAt: null, expiresAt: 301_000 } });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await act(async () => { await vi.advanceTimersByTimeAsync(300_001); });
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(container.querySelector('[role="timer"]')).toBeNull();
+  expect(container.textContent).toContain('expired');
+  expect(container.textContent).toContain('Get verification passage');
+  expect(communityRequest).not.toHaveBeenCalled();
+});
+
+it.each([404, 410])('retires a stale passage when the first keystroke is rejected with HTTP %s', async code => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready', startedAt: null, expiresAt: 301_000 } });
+  vi.mocked(communityRequest).mockRejectedValue(new CommunityError('Challenge expired. Request a new passage.', code));
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('x');
+  expect(container.querySelector('[role="timer"]')).toBeNull();
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(container.textContent).toContain('Get verification passage');
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+});
+
+it('recovers from a rejected start with a fresh passage without reloading the page', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready', startedAt: null, expiresAt: 301_000 } });
+  vi.mocked(communityRequest).mockRejectedValueOnce(new CommunityError('Challenge expired. Request a new passage.', 410))
+    .mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, id: 'replacement', status: 'ready', startedAt: null, expiresAt: 301_000 } });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('x');
+  await click('Get verification passage');
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('textarea')).toHaveValue('');
+  expect(container.querySelector('textarea')).toHaveFocus();
+  expect(container.querySelector('textarea')!.disabled).toBe(false);
+  expect(container.textContent).toContain('Starts on your first character');
+});
+
+it('does not extend the ready passage lifetime when a transient start failure stops the optimistic timer', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready', startedAt: null, expiresAt: 301_000 } });
+  vi.mocked(communityRequest).mockRejectedValue(new Error('Offline'));
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await act(async () => { await vi.advanceTimersByTimeAsync(299_000); });
+  await enterAnswer('x');
+  expect(container.textContent).toContain('Starts on your first character');
+  await act(async () => { await vi.advanceTimersByTimeAsync(1001); });
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(container.querySelector('[role="timer"]')).toBeNull();
+});
+
+it.each(['feedback', 'submission'])('retires an attempt rejected as expired during %s', async operation => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockRejectedValue(new CommunityError('Challenge expired. Request a new passage.', 410));
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer(operation === 'feedback' ? 'x' : 'some words');
+  await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(container.querySelector('[role="timer"]')).toBeNull();
+  expect(container.textContent).not.toContain('Retry submission');
+  expect(container.textContent).toContain('Get verification passage');
+  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
 });
 
 it('ignores a matching hash that finishes after the player changes the text', async () => {

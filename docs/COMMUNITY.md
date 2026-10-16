@@ -47,6 +47,10 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   on reload/retry. Old three-per-fifteen-minute lockouts reset once when the new
   policy is first used. Identical finish retries recover the saved
   outcome for 15 minutes; another answer cannot overwrite it.
+  The frontend also retires an idle image when its ready window expires.
+  A missing/expired challenge response to start, feedback, finish or cancel
+  retires the corresponding UI, stopping its optimistic timer and allowing a
+  fresh passage without reloading. Transient errors keep submission retries.
 - Every public score must pass the check, at any WPM. The check requires
   `max(1, ceil(dailyWpm * 0.75))` WPM after completing the exact text. There is no
   separate accuracy-percentage requirement: mistakes can be corrected before
