@@ -56,15 +56,22 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   first-character request's latency can count. A lost response offers an exact
   retry, not a replacement answer. There is no normal submit button. Claims above 400 WPM are
   rejected. The server derives the claim from the private daily result.
-- Optional typing feedback calls `/api/verification/check` at most once per
-  800 ms, with only one request in flight. The object enforces the same cooldown
-  durably and admits checks only while the owning browser's timer is running.
+- Optional typing feedback calls `/api/verification/check` after a 40 ms
+  coalescing window, then at most once per 150 ms while text changes, with only
+  one request in flight. There is no idle polling. Confirmed correct prefixes
+  and a known first error are reused locally; appending beyond that error or
+  editing later text requires no request. Network latency still applies.
+  The object enforces a durable 100 ms cooldown and admits checks only while
+  the owning browser's timer is running. It stores that small cooldown separately
+  rather than rewriting the passage/image or resetting its alarm on each hint.
+  Hints have a separate 600-requests/minute per-IP limiter; ordinary community
+  actions retain their 120/minute budget, so hints cannot block submission.
   It returns the first wrong position, not expected letters or a whole-answer
   correctness mask. Later text remains ungraded until that error is corrected,
   avoiding cascading errors after a missing/extra character. Feedback can still
   serve as a bounded guessing oracle; it does not make the check OCR-proof.
-  Replies for edited prefixes are ignored; replies remain useful if the user
-  only appended text. A mirror uses the existing character-error style while
+  Replies whose prefix through the error was edited are ignored; changing text
+  after the error keeps its highlight valid. A mirror uses the existing character-error style while
   the native textarea owns selection, input and scrolling. Whitespace positions
   map back to the original input. Invalid punctuation is marked locally. Network
   errors in this optional feedback never block exact-match submission. These

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
-import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
+import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
 import { formatWpm } from '../lib/scoring';
 
 interface Props {
@@ -31,6 +31,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const mirror = useRef<HTMLDivElement>(null);
   const latestAnswer = useRef(answer);
   latestAnswer.current = answer;
+  const scheduleFeedback = useRef<() => void>();
   const controller = useRef<AbortController>();
   const inFlight = useRef(false);
   const revision = useRef(0);
@@ -137,24 +138,56 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     let stopped = false;
     let checking = false;
     let lastChecked = '';
+    let correctPrefix = '';
+    let wrongPrefix: string | undefined;
+    let nextCheckAt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let request: AbortController | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const check = async () => {
+    const needsCheck = () => {
       const text = latestAnswer.current;
-      if (checking || stopped || submission.current !== null || performance.now() > deadline.current ||
-          !normalizeVerificationText(text) || /[^a-zA-Z\s]/.test(text) || text === lastChecked) return;
+      const normalized = normalizeVerificationText(text);
+      return !stopped && submission.current === null && performance.now() <= deadline.current &&
+        normalized && !/[^a-zA-Z\s]/.test(text) && normalized !== lastChecked &&
+        !correctPrefix.startsWith(normalized) && !(wrongPrefix && normalized.startsWith(wrongPrefix));
+    };
+    const schedule = () => {
+      if (checking || timer !== undefined || !needsCheck()) return;
+      // A short leading window coalesces edits without postponing feedback
+      // indefinitely during fast typing. Only one request can be in flight.
+      timer = setTimeout(() => { timer = undefined; void check(); }, Math.max(40, nextCheckAt - performance.now()));
+    };
+    const check = async () => {
+      if (!needsCheck()) return;
+      const text = latestAnswer.current;
       checking = true;
+      nextCheckAt = performance.now() + VERIFICATION_FEEDBACK_INTERVAL_MS;
       request = new AbortController();
       timeout = setTimeout(() => request?.abort(), 1500);
       try {
         const result = await communityRequest<VerificationFeedback>('verification/check', { id, text }, request.signal);
-        if (!stopped && result.id === id) { setFeedback({ ...result, text }); lastChecked = text; }
-      } catch { /* Feedback is best effort; completion checking remains independent. */ }
-      finally { clearTimeout(timeout); checking = false; }
+        // Anchor the cooldown after acknowledgement too: variable request latency
+        // must not make a later check overtake the server's minimum interval.
+        nextCheckAt = Math.max(nextCheckAt, performance.now() + VERIFICATION_FEEDBACK_COOLDOWN_MS);
+        if (!stopped && result.id === id) {
+          lastChecked = normalizeVerificationText(text);
+          const prefix = lastChecked.slice(0, result.mismatchIndex ?? lastChecked.length);
+          if (prefix.length > correctPrefix.length) correctPrefix = prefix;
+          wrongPrefix = result.mismatchIndex === null ? undefined : lastChecked.slice(0, result.mismatchIndex + 1);
+          setFeedback({ ...result, text });
+        }
+      } catch (err) {
+        // Feedback is optional. Back off instead of hammering a slow service or
+        // consuming the submission budget while the player keeps typing.
+        nextCheckAt = performance.now() + (err instanceof CommunityError && err.status === 429 ? 1000 : 800);
+      }
+      finally { clearTimeout(timeout); checking = false; schedule(); }
     };
-    const timer = setInterval(() => void check(), VERIFICATION_FEEDBACK_INTERVAL_MS);
-    return () => { stopped = true; clearInterval(timer); clearTimeout(timeout); request?.abort(); };
+    scheduleFeedback.current = schedule;
+    schedule();
+    return () => { stopped = true; scheduleFeedback.current = undefined; clearTimeout(timer); clearTimeout(timeout); request?.abort(); };
   }, [attempt, imageReady]);
+  useEffect(() => { scheduleFeedback.current?.(); }, [answer]);
 
   function changeAnswer(text: string) {
     if (submission.current !== null) return;
@@ -183,7 +216,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     receipt.validUntil > verification.serverNow && receipt.requiredWpm >= requiredVerificationWpm(run.wpm!);
   const activeAttempt = attempt && ['ready', 'running'].includes(attempt.status);
   const checkedOffset = feedback?.id === attempt?.id && feedback?.mismatchIndex !== null && feedback &&
-    normalizeVerificationText(answer).startsWith(normalizeVerificationText(feedback.text))
+    normalizeVerificationText(answer).startsWith(normalizeVerificationText(feedback.text).slice(0, feedback.mismatchIndex + 1))
     ? verificationCharacterOffset(answer, feedback.mismatchIndex) : -1;
   const invalidOffset = answer.search(/[^a-zA-Z\s]/);
   const wrongOffset = checkedOffset < 0 ? invalidOffset : invalidOffset < 0 ? checkedOffset : Math.min(checkedOffset, invalidOffset);

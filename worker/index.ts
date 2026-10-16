@@ -32,6 +32,7 @@ export interface Env {
   VERIFICATIONS?: { idFromName(name: string): unknown; get(id: unknown): Fetcher };
   LEADERBOARDS?: { idFromName(name: string): unknown; get(id: unknown): Fetcher };
   VERIFICATION_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  VERIFICATION_FEEDBACK_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
 }
 
 function json(value: unknown, status = 200): Response {

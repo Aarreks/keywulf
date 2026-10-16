@@ -54,9 +54,12 @@ export async function handleCommunity(request: Request, env: Env): Promise<Respo
       (request.method === 'POST' && request.headers.get('Origin') !== url.origin)) return verificationJson({ error: 'Same-origin request required' }, 403);
   const cookie = request.headers.get('Cookie')?.split(';').map(s => s.trim()).find(s => s.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   let player = cookie && UUID.test(cookie) ? cookie : undefined;
-  if (env.VERIFICATION_LIMITER) {
+  // Frequent optional hints cannot exhaust the budget for starting/finishing a
+  // run. Older deployments without the dedicated binding keep the coarse limit.
+  const limiter = action === 'check' ? env.VERIFICATION_FEEDBACK_LIMITER ?? env.VERIFICATION_LIMITER : env.VERIFICATION_LIMITER;
+  if (limiter) {
     const key = request.headers.get('CF-Connecting-IP') || player || 'local';
-    if (!(await env.VERIFICATION_LIMITER.limit({ key: `keywulf-community:${key}` })).success) {
+    if (!(await limiter.limit({ key: `keywulf-community:${key}` })).success) {
       const response = verificationJson({ error: 'Too many requests. Please wait a minute.' }, 429);
       response.headers.set('Retry-After', '60');
       return response;

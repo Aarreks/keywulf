@@ -53,6 +53,13 @@ name = "VERIFICATION_LIMITER"
 namespace_id = "10761016"
 simple = { limit = 120, period = 60 }
 
+# Optional live typing hints have a separate budget so they cannot rate-limit
+# an exact-match submission or a daily result. The object also bounds each owner.
+[[ratelimits]]
+name = "VERIFICATION_FEEDBACK_LIMITER"
+namespace_id = "10761017"
+simple = { limit = 600, period = 60 }
+
 [triggers]
 # Prepare the current UTC date at 00:20, 00:30, 00:40 and 00:50 UTC.
 # Already prepared dates return immediately without another model call.

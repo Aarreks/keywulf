@@ -114,15 +114,86 @@ it('highlights the first wrong character, keeps appended feedback useful and cle
   await render();
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
   await enterAnswer('some wurd');
-  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(39); });
+  expect(communityRequest).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
   expect(container.querySelector('textarea')).toHaveAttribute('aria-invalid', 'true');
   expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/check');
   await enterAnswer('some wurds');
   expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  await enterAnswer('some wurx');
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
   await enterAnswer('some word');
   expect(container.querySelector('.verification-mirror .incorrect')).toBeNull();
   expect(container.querySelector('textarea')).toHaveAttribute('aria-invalid', 'false');
+});
+
+it('coalesces fast typing, checks the latest text and reuses confirmed prefixes without polling', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockResolvedValue({ id: 'check', mismatchIndex: null });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('s');
+  await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+  await enterAnswer('so');
+  await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(communityRequest).mock.calls[0][1]).toEqual({ id: 'check', text: 'so' });
+  await enterAnswer('som');
+  await act(async () => { await vi.advanceTimersByTimeAsync(70); });
+  await enterAnswer('some');
+  await act(async () => { await vi.advanceTimersByTimeAsync(79); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(communityRequest).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(communityRequest).mock.calls[1][1]).toEqual({ id: 'check', text: 'some' });
+  await enterAnswer('so');
+  await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+  expect(communityRequest).toHaveBeenCalledTimes(2);
+});
+
+it('keeps one feedback request in flight and follows it with the latest edit', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  let reply!: (value: { id: string; mismatchIndex: number | null }) => void;
+  vi.mocked(communityRequest).mockReturnValueOnce(new Promise(resolve => { reply = resolve; }))
+    .mockResolvedValue({ id: 'check', mismatchIndex: null });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some wurd');
+  await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+  await enterAnswer('some word');
+  await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  await act(async () => reply({ id: 'check', mismatchIndex: 6 }));
+  expect(container.querySelector('.verification-mirror .incorrect')).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(99); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(communityRequest).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(communityRequest).mock.calls[1][1]).toEqual({ id: 'check', text: 'some word' });
+});
+
+it('backs off failed feedback requests without continually polling unchanged successful text', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, characterCount: 200, expiresAt: 30_000 } });
+  vi.mocked(communityRequest).mockRejectedValueOnce(new Error('Offline'))
+    .mockResolvedValue({ id: 'check', mismatchIndex: null });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some');
+  await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+  await enterAnswer('some word');
+  await act(async () => { await vi.advanceTimersByTimeAsync(799); });
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(communityRequest).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(communityRequest).toHaveBeenCalledTimes(2);
 });
 
 it('ignores delayed feedback for edited text and highlights invalid characters without a server query', async () => {

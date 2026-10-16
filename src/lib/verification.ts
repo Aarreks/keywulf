@@ -2,7 +2,8 @@
 export const VERIFICATION_MAX_CLAIM_WPM = 400;
 export const VERIFICATION_READY_MS = 5 * 60_000;
 export const VERIFICATION_RECEIPT_MS = 30 * 86_400_000;
-export const VERIFICATION_FEEDBACK_INTERVAL_MS = 800;
+export const VERIFICATION_FEEDBACK_INTERVAL_MS = 150;
+export const VERIFICATION_FEEDBACK_COOLDOWN_MS = 100;
 
 export interface VerificationFeedback { id: string; mismatchIndex: number | null }
 

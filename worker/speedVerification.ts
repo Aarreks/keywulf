@@ -2,7 +2,7 @@ import type { Storage } from './index';
 import {
   normalizeVerificationText, requiredVerificationWpm, scoreVerification, verificationTextHash, verificationTimeLimitMs,
   VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
-  VERIFICATION_RECEIPT_MS, VERIFICATION_FEEDBACK_INTERVAL_MS,
+  VERIFICATION_RECEIPT_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS,
   type VerificationAttempt, type VerificationReceipt, type VerificationStatus,
 } from '../src/lib/verification';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
@@ -11,7 +11,7 @@ interface Attempt extends VerificationAttempt {
   answer: string;
   image: Uint8Array;
   submission?: string;
-  checkedAt?: number;
+  checkedAt?: number; // Cooldown in records written before the separate feedback key.
 }
 interface RecordState {
   attempt?: Attempt;
@@ -70,6 +70,7 @@ export class SpeedVerification {
       const record = await storage.get<RecordState>('verification') ?? {};
       const now = Date.now();
       if (record.attempt && attemptDeadline(record.attempt) < now) delete record.attempt;
+      if (!record.attempt) await storage.delete('feedbackCheckedAt');
       if (record.receipt && record.receipt.validUntil <= now) delete record.receipt;
       if (record.budget && record.budget.until <= now) delete record.budget;
       if (Object.keys(record).length) await storage.put('verification', record);
@@ -133,14 +134,17 @@ export class SpeedVerification {
       if (now > attemptDeadline(attempt)) return { record, status: 410, error: 'Challenge expired. Request a new passage.' };
       if (action === 'check') {
         if (attempt.status !== 'running') return { record, status: 409, error: 'Start typing first' };
-        if (attempt.checkedAt !== undefined && now - attempt.checkedAt < VERIFICATION_FEEDBACK_INTERVAL_MS) {
+        const checked = await storage.get<{ id: string; at: number }>('feedbackCheckedAt');
+        const checkedAt = checked?.id === attempt.id ? checked.at : attempt.checkedAt;
+        if (checkedAt !== undefined && now - checkedAt < VERIFICATION_FEEDBACK_COOLDOWN_MS) {
           return { record, status: 429, error: 'Wait before checking again' };
         }
         const text = normalizeVerificationText(payload.text as string);
         let index = 0;
         while (index < text.length && text[index] === attempt.answer[index]) index++;
-        attempt.checkedAt = now;
-        await storage.put('verification', record);
+        // Persist just the cooldown, not the image and entire challenge, on the
+        // high-frequency path. The transaction still serializes concurrent checks.
+        await storage.put('feedbackCheckedAt', { id: attempt.id, at: now });
         // Return only the first wrong position, never expected letters or a
         // per-position mask that would allow parallel guesses of the whole text.
         return { record, status: 200, feedback: { id: attempt.id, mismatchIndex: index < text.length ? index : null } };
@@ -182,8 +186,8 @@ export class SpeedVerification {
       await storage.put('verification', record);
       return { record, status: 200 };
     });
-    await this.scheduleCleanup(outcome.record);
     if ('feedback' in outcome && outcome.feedback) return verificationJson(outcome.feedback);
+    await this.scheduleCleanup(outcome.record);
     return outcome.error ? verificationJson({ error: outcome.error }, outcome.status)
       : verificationJson(publicStatus(outcome.record, Date.now()), outcome.status);
   }
