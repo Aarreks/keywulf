@@ -140,6 +140,36 @@ describe('server scoring', () => {
 });
 
 describe('single-use speed verification', () => {
+  it('enforces ten seconds to start, including the last valid millisecond, without shortening typing time', async () => {
+    const actor = verification();
+    const ready = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    expect(ready.attempt!.expiresAt - ready.serverNow).toBe(10_000);
+    vi.advanceTimersByTime(10_000);
+    const started = await (await post(actor, 'start', { id: ready.attempt!.id })).json() as VerificationStatus;
+    expect(started.attempt!.status).toBe('running');
+    expect(started.attempt!.expiresAt - started.attempt!.startedAt!).toBe(verificationTimeLimitMs(answer.length, 113));
+    const other = verification('bob');
+    const stale = await (await post(other, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    vi.advanceTimersByTime(10_001);
+    expect((await post(other, 'start', { id: stale.attempt!.id })).status).toBe(410);
+    expect((await (await status(actor)).json() as VerificationStatus).attempt!.status).toBe('running');
+    const replacement = await (await post(other, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    expect(replacement.attempt!.id).not.toBe(stale.attempt!.id);
+  });
+  it('applies the short start deadline to persisted five-minute ready records too', async () => {
+    const actor = verification();
+    const ready = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    const store = verificationStores.get('alice')!;
+    const record = await store.get<{ attempt: { issuedAt?: number; expiresAt: number } }>('verification');
+    delete record!.attempt.issuedAt;
+    record!.attempt.expiresAt = Date.now() + 300_000;
+    await store.put('verification', record);
+    verifications.delete('alice');
+    expect((await (await status(verification())).json() as VerificationStatus).attempt!.expiresAt).toBe(Date.now() + 10_000);
+    vi.advanceTimersByTime(10_001);
+    expect((await post(verification(), 'start', { id: ready.attempt!.id })).status).toBe(410);
+    expect((await verification().fetch(new Request(`https://object/image?id=${ready.attempt!.id}`))).status).toBe(410);
+  });
   it('returns only the first wrong position after starting, with a durable feedback cooldown', async () => {
     const actor = verification();
     const ready = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
@@ -175,7 +205,7 @@ describe('single-use speed verification', () => {
     expect(view.attempt!.textHash).toBe(await verificationTextHash(view.attempt!.id, answer));
     expect(view.attempt!.textHash).not.toBe(await verificationTextHash('another-check', answer));
     expect((await actor.fetch(new Request(`https://object/image?id=${view.attempt!.id}`))).status).toBe(200);
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(5000);
     expect((await (await status(actor)).json() as VerificationStatus).attempt!.startedAt).toBeNull();
     const running = await (await post(actor, 'start', { id: view.attempt!.id })).json() as VerificationStatus;
     vi.advanceTimersByTime(2000);

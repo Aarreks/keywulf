@@ -47,7 +47,13 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   on reload/retry. Old three-per-fifteen-minute lockouts reset once when the new
   policy is first used. Identical finish retries recover the saved
   outcome for 15 minutes; another answer cannot overwrite it.
-  The frontend also retires an idle image when its ready window expires.
+  Before typing, a live "Start within 10.0s" countdown shows the remaining start
+  window to tenths alongside the separate typing allowance. The server enforces
+  ten seconds from issuance, including older ready records. Running attempts
+  keep their original typing clock. The display switches to the typing countdown
+  on the first character; an unstarted image is retired when its window expires.
+  Only one successful passage is needed; unsuccessful attempts can be retried
+  within the existing twenty-per-five-minute allowance.
   A missing/expired challenge response to start, feedback, finish or cancel
   retires the corresponding UI, stopping its optimistic timer and allowing a
   fresh passage without reloading. Transient errors keep submission retries.

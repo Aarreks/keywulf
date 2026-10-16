@@ -25,6 +25,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const [imageReady, setImageReady] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
+  const [readyRemaining, setReadyRemaining] = useState<{ id: string; ms: number }>();
   const [starting, setStarting] = useState(false);
   const [feedback, setFeedback] = useState<(VerificationFeedback & { text: string }) | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -81,8 +82,12 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     if (readyDeadline.current?.id !== attempt.id) {
       readyDeadline.current = { id: attempt.id, at: performance.now() + Math.max(0, attempt.expiresAt - verification.serverNow) };
     }
+    const readyAt = readyDeadline.current.at;
+    const tick = () => setReadyRemaining({ id: attempt.id, ms: Math.max(0, readyAt - performance.now()) });
+    tick();
+    const countdown = setInterval(tick, 100);
     const timer = setTimeout(() => expireAttempt(attempt.id), Math.max(0, readyDeadline.current.at - performance.now()) + 1);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); clearInterval(countdown); };
   }, [attempt, verification, starting, expireAttempt]);
 
   const syncMirror = useCallback(() => {
@@ -253,6 +258,8 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const hasReceipt = run && receipt && receipt.date === run.date && receipt.corpusHash === run.corpusHash &&
     receipt.validUntil > verification.serverNow && receipt.requiredWpm >= requiredVerificationWpm(run.wpm!);
   const activeAttempt = attempt && ['ready', 'running'].includes(attempt.status);
+  const readyMs = readyRemaining && readyRemaining.id === attempt?.id ? readyRemaining.ms : Math.max(0, (attempt?.expiresAt ?? 0) - (verification?.serverNow ?? 0));
+  const timeToStart = (Math.ceil(readyMs / 100) / 10).toFixed(1);
   const checkedOffset = feedback?.id === attempt?.id && feedback?.mismatchIndex !== null && feedback &&
     normalizeVerificationText(answer).startsWith(normalizeVerificationText(feedback.text).slice(0, feedback.mismatchIndex + 1))
     ? verificationCharacterOffset(answer, feedback.mismatchIndex) : -1;
@@ -306,10 +313,10 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     </>}
     {activeAttempt && <div className="panel result">
       <h3>Speed verification</h3>
-      <p>Complete the text at <strong>{attempt.requiredWpm} WPM</strong> or faster. It submits automatically when the words match. Letter case does not matter. {VERIFICATION_PASSAGE_ALLOWANCE}.</p>
+      <p>Pass one passage at <strong>{attempt.requiredWpm} WPM</strong> or faster. Timing starts on your first character. It submits automatically when the words match. Letter case does not matter. {VERIFICATION_PASSAGE_ALLOWANCE}.</p>
       <>
-        <p className="tnum" role="timer" aria-label="Time remaining">{attempt.status === 'ready' && !starting
-          ? `${(Math.ceil(verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) / 100) / 10).toFixed(1)} seconds · Starts on your first character`
+        <p className="tnum" role="timer" aria-label={attempt.status === 'ready' && !starting ? 'Time to start' : 'Time remaining'}>{attempt.status === 'ready' && !starting
+          ? `Start within ${timeToStart}s · ${(Math.ceil(verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) / 100) / 10).toFixed(1)} seconds to type`
           : `${(Math.ceil(remainingMs / 100) / 10).toFixed(1)}s remaining · No pause`}</p>
         <img className="verification-image" src={`/api/verification/image?id=${attempt.id}&v=${imageRetry}`} alt="Verification passage to transcribe" width="720" height={attempt.imageHeight}
           onLoad={() => setImageReady(true)}

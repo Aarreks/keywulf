@@ -9,6 +9,7 @@ import {
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
 
 interface Attempt extends VerificationAttempt {
+  issuedAt?: number;
   answer: string;
   image: Uint8Array;
   submission?: string;
@@ -25,6 +26,10 @@ interface VerificationStorage extends Storage {
 const FINISHED_RETRY_WINDOW_MS = 15 * 60_000;
 
 function attemptDeadline(attempt: Attempt): number {
+  // Older ready records encoded a five-minute window only in expiresAt. Clamp
+  // those too, without changing a running passage's start time or speed budget.
+  if (attempt.status === 'ready') return Math.min(attempt.expiresAt,
+    (attempt.issuedAt ?? attempt.expiresAt - 5 * 60_000) + VERIFICATION_READY_MS);
   // Derive this for existing running records too, so deployment cannot leave a
   // separate fixed timeout in force. Completed results keep their retry window.
   return attempt.status === 'running' && attempt.startedAt !== null
@@ -231,7 +236,7 @@ export class SpeedVerification {
       if (record.budget.used >= VERIFICATION_PASSAGE_LIMIT) return { record, status: 429, error: `${VERIFICATION_PASSAGE_ALLOWANCE}. Please try again later.` };
       record.budget.used++;
       record.attempt = {
-        id, date, corpusHash, claimedWpm, requiredWpm, answer, image, textHash,
+        id, date, corpusHash, claimedWpm, requiredWpm, answer, image, textHash, issuedAt: now,
         characterCount: answer.length, imageHeight: new DataView(image.buffer, image.byteOffset).getUint32(20),
         status: 'ready', expiresAt: now + VERIFICATION_READY_MS,
         startedAt: null, result: null,
