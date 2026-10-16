@@ -149,7 +149,7 @@ describe('daily publication', () => {
     await vi.waitFor(() => expect(resolveMetadata).toHaveBeenCalledTimes(1));
     const newer = structuredClone(original);
     newer.sourcePool[0].title = 'Newer verified article title';
-    expect((await admin('repair-sources', original.date, newer)).status).toBe(200);
+    expect((await admin('repair-sources', original.date, { expected: original, repaired: newer })).status).toBe(200);
     finishLookup();
     expect((await pending).status).toBe(409);
     expect(await stores.get(original.date)!.get('challenge')).toEqual(newer);
@@ -250,10 +250,35 @@ describe('daily publication', () => {
     await admin('seed', original.date, original);
     const repaired = structuredClone(original);
     repaired.sourcePool[0].title = 'Verified video title from the publisher';
-    expect((await admin('repair-sources', original.date, repaired)).status).toBe(200);
+    expect((await admin('repair-sources', original.date, { expected: original, repaired })).status).toBe(200);
+    const latest = structuredClone(repaired);
     repaired.stories[0].body = repaired.stories[0].body.replace(/\w+/, 'Altered');
-    expect((await admin('repair-sources', original.date, repaired)).status).toBe(409);
+    expect((await admin('repair-sources', original.date, { expected: latest, repaired })).status).toBe(409);
     expect((await worker.fetch(new Request('https://keywulf.com/_internal/repair-sources', { method: 'POST' }), env)).status).toBe(401);
+  });
+
+  it('rejects stale runner repairs after a newer repair completes, even if typed text is unchanged', async () => {
+    const original = challenge('2026-10-06');
+    await admin('seed', original.date, original);
+
+    const newer = structuredClone(original);
+    newer.sourcePool[0].title = 'Newly verified source title';
+    expect((await admin('repair-sources', original.date, { expected: original, repaired: newer })).status).toBe(200);
+
+    // A runner that resolved titles against the old snapshot submits later.
+    // The protected briefing text matches, but its stale metadata must not win.
+    const stale = structuredClone(original);
+    stale.sourcePool[0].title = 'Stale runner title';
+    expect((await admin('repair-sources', original.date, { expected: original, repaired: stale })).status).toBe(409);
+    expect(await stores.get(original.date)!.get('challenge')).toEqual(newer);
+
+    // Clients must supply an expected snapshot, and a fresh one may update it.
+    expect((await admin('repair-sources', original.date, stale)).status).toBe(400);
+    const latest = structuredClone(newer);
+    latest.sourcePool[0].title = 'Another verified source title';
+    expect((await admin('repair-sources', original.date, { expected: newer, repaired: latest })).status).toBe(200);
+    expect(await stores.get(original.date)!.get('challenge')).toEqual(latest);
+    expect(generateBriefing).not.toHaveBeenCalled();
   });
 
   it('serves a different prepared text at 01:00 without a cron or deployment', async () => {

@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = await fetch(`https://keywulf.com/_internal/repair-sources?date=${original.date}`, {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.KEYWULF_ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(repaired),
+      body: JSON.stringify({ expected: original, repaired }),
     });
     // A newly deployed Worker may briefly call an older Durable Object version.
     // Retrying this metadata-only operation is safe and never regenerates text.
@@ -26,6 +26,17 @@ async function main(): Promise<void> {
       console.log(`Waiting for the metadata repair endpoint: HTTP ${result.status}`);
       await new Promise(resolve => setTimeout(resolve, 3000));
       continue;
+    }
+    if (result.status === 409) {
+      await result.body?.cancel();
+      const response = await fetch(`https://keywulf.com/data/today.json?v=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Could not verify concurrent metadata repair: HTTP ${response.status}`);
+      const latest = await response.json() as Challenge;
+      if (sourceRepairIdentity(latest) !== sourceRepairIdentity(original)) {
+        throw new Error('The published briefing changed during source repair');
+      }
+      console.log('Runner metadata check: skipped a stale update; newer source metadata retained.');
+      return;
     }
     if (!result.ok) throw new Error(`Metadata-only repair rejected: HTTP ${result.status}: ${await result.text()}`);
     console.log('Runner metadata check: additional source titles repaired; typed text unchanged.');

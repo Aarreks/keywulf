@@ -35,12 +35,12 @@ GitHub freshness check -> public JSON, read-only -> failed job if unavailable
 
 ## From a scheduled attempt to a playable briefing
 
-1. [Worker.scheduled](../worker/index.ts#L216) chooses the date from the trigger's
+1. [Worker.scheduled](../worker/index.ts#L224) chooses the date from the trigger's
    scheduled time, not the visitor's location. [briefingForDate](../worker/index.ts#L37)
    maps the date to the same Durable Object for every caller. Normal preparation
    targets the current UTC date; [recoverySlot](../worker/recovery.ts#L7) admits
    only the six recovery slots before 03:00 UTC and records each claimed slot.
-2. [DailyBriefing.prepare](../worker/index.ts#L131) atomically checks for a ready
+2. [DailyBriefing.prepare](../worker/index.ts#L139) atomically checks for a ready
    briefing and an unexpired lease. Ready dates return immediately; a busy date
    returns HTTP 202. Otherwise it stores a random owner ID and a 15-minute expiry.
 3. [generateBriefing](../scripts/generateBriefing.ts#L20) researches current news,
@@ -59,7 +59,7 @@ GitHub freshness check -> public JSON, read-only -> failed job if unavailable
    day's text. In a final transaction it checks the lease owner, writes a missing
    briefing and its metadata version together, and releases the lease. The text
    remains unchanged if migration seeded the date while generation was pending.
-6. [Worker.fetch](../worker/index.ts#L190) handles `/data/today.json` by choosing
+6. [Worker.fetch](../worker/index.ts#L198) handles `/data/today.json` by choosing
    [activeChallengeDate](../src/lib/publication.ts#L6) once at request entry.
    The object's read returns the stored JSON with `no-store`, or HTTP 503 if absent.
    A request begun just before the boundary may complete afterward with the old
@@ -105,17 +105,19 @@ Source labels and links are the narrow exception to immutable publication.
 [sourceRepairIdentity](../scripts/refreshSourceTitles.ts#L34) excludes only those
 two source fields and compares everything else, including photos and prose.
 [commitSourceRepair](../worker/index.ts#L65) compares the entire stored snapshot
-again inside a transaction before writing. If a newer repair won during the
-lookup, the slower request returns HTTP 409 instead of overwriting it. The
-deployment runner's older input is not itself versioned: see the limitations below.
+again inside a transaction before writing. The runner posts both its original
+snapshot and the proposed metadata repair. If any other writer changed that
+snapshot during publisher lookups, the stale request gets HTTP 409 and cannot
+replace newer labels. The runner verifies that typed content is still unchanged
+and skips the obsolete repair.
 
 ## Important invariants and their boundaries
 
 | Invariant | Implementation and evidence |
 | --- | --- |
-| A visitor cannot start paid generation. | Public read routing and bearer-authenticated admin routes in [Worker.fetch](../worker/index.ts#L190); [worker tests](../worker/index.test.ts). |
+| A visitor cannot start paid generation. | Public read routing and bearer-authenticated admin routes in [Worker.fetch](../worker/index.ts#L198); [worker tests](../worker/index.test.ts). |
 | Once a date has text, retries/seed do not replace it. | [prepare and seed](../worker/index.ts#L74); tests cover retry, takeover and concurrent seeding. This assumes the existing namespace/date naming remains stable. |
-| A stale generator cannot commit after ownership changes. | [prepare](../worker/index.ts#L131); takeover regression test. Overlapping model calls after expiry remain possible. |
+| A stale generator cannot commit after ownership changes. | [prepare](../worker/index.ts#L139); takeover regression test. Overlapping model calls after expiry remain possible. |
 | No partial or structurally invalid generated briefing is published. | [generateBriefing](../scripts/generateBriefing.ts#L20), [validateChallenge](../scripts/challengeSchema.ts#L74), final storage transaction. These checks do not prove factual truth. |
 | Metadata repair cannot edit typed text or game identity. | [sourceRepairIdentity](../scripts/refreshSourceTitles.ts#L34), validation and transactional snapshot comparison; repair and refresh race tests. |
 | Backspace does not erase an error from accuracy history. | [processChar/processBack](../src/components/Play.tsx#L188), [computeScore](../src/lib/scoring.ts#L58), browser-flow tests. WPM counts currently correct characters; accuracy counts all attempts. |
@@ -136,11 +138,12 @@ deployment runner's older input is not itself versioned: see the limitations bel
   in [saveState](../src/lib/storage.ts#L249). One can overwrite another's results.
   Storage failure falls back to session-only play; browser termination may lose
   the last snapshot. A storage-event merge alone would not make writes atomic.
-- **Metadata protocol:** the internal CAS catches changes during server-side
-  repair. A runner that computed an older candidate before calling `/repair-sources`
-  can still replace newer labels, because the request carries no expected revision.
-  Adding a revision/precondition to both client and server would address that.
-  Concurrent `SourceMetadata` misses can also duplicate publisher fetches.
+- **Metadata protocol:** the runner includes its original challenge snapshot as
+  a precondition for `/repair-sources`. A transaction compares it against the
+  current stored briefing, rejecting delayed stale writes with HTTP 409. The
+  runner treats a conflict as superseded only after confirming that the game text
+  stayed unchanged. Concurrent `SourceMetadata` misses can still duplicate
+  publisher fetches. No retry automatically merges competing metadata edits.
 - **Freshness and model trust:** prompts and grounding are evidence, not a
   factual/recency proof. The monitor checks the active date and schema, not each
   article's age. Exact previous-text rejection does not detect all semantic repeats.

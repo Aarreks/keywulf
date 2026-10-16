@@ -88,10 +88,18 @@ export class DailyBriefing {
     if (url.pathname.startsWith('/repair-sources/')) {
       const original = await this.state.storage.get<Challenge>('challenge');
       if (!original) return json({ error: 'Briefing not ready' }, 503);
-      const repaired = await request.json() as Challenge;
-      try { validateChallenge(repaired); } catch { return json({ error: 'Invalid repaired metadata' }, 400); }
-      if (sourceRepairIdentity(original) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
-      if (!await this.commitSourceRepair(original, repaired)) return json({ error: 'Concurrent metadata repair; retry' }, 409);
+      // The runner supplies the snapshot it actually read before resolving titles.
+      // Without it, a delayed POST could overwrite newer metadata with stale labels.
+      let payload: { expected: Challenge; repaired: Challenge };
+      try {
+        payload = await request.json() as { expected: Challenge; repaired: Challenge };
+        validateChallenge(payload.expected);
+        validateChallenge(payload.repaired);
+      } catch { return json({ error: 'Expected and repaired briefings are required and must be valid' }, 400); }
+      const { expected, repaired } = payload;
+      if (expected.date !== date || repaired.date !== date) return json({ error: 'Repair date mismatch' }, 400);
+      if (sourceRepairIdentity(expected) !== sourceRepairIdentity(repaired)) return json({ error: 'Repair changed protected briefing fields' }, 409);
+      if (!await this.commitSourceRepair(expected, repaired)) return json({ error: 'Concurrent metadata repair; retry with a fresh snapshot' }, 409);
       return json({ date, repaired: true });
     }
     if (url.pathname.startsWith('/refresh-sources/')) {
