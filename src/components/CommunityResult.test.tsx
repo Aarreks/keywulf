@@ -45,19 +45,26 @@ it('ignores a stale initial read arriving after a successful score submission', 
   let finishRead!: (value: { run: RankedRun }) => void;
   vi.mocked(getRankedRun).mockReturnValue(new Promise(resolve => { finishRead = resolve; }));
   vi.mocked(communityRequest).mockResolvedValue({ run: { ...run, status: 'published', wpm: 70 } });
-  await render(); await click('Post official result');
+  await render(); await click('Join leaderboard');
   expect(container.textContent).toContain('Posted as');
   await act(async () => finishRead({ run }));
   expect(container.textContent).toContain('Posted as');
 });
 
-it('publishes an already frozen private score without submitting the replay again', async () => {
-  const saved = { ...run, status: 'unpublished' as const, wpm: 70 };
+it('lets the owner update a published nickname without submitting the replay again', async () => {
+  const saved = { ...run, status: 'published' as const, wpm: 70, verified: true };
   vi.mocked(getRankedRun).mockResolvedValue({ run: saved });
-  vi.mocked(communityRequest).mockResolvedValue({ run: { ...saved, status: 'published' } });
-  await render(); await click('Post official result');
+  vi.mocked(communityRequest).mockResolvedValue({ run: { ...saved, name: 'Fox 2' } });
+  await render();
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>('#leaderboard-nickname')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Fox 2');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click('Save nickname');
   expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['runs/publish']);
-  expect(container.textContent).toContain('Posted as');
+  expect(vi.mocked(communityRequest).mock.calls[0][1]).toEqual({ date: run.date, id: run.id, nickname: 'Fox 2' });
+  expect(container.textContent).toContain('Fox 2');
 });
 
 it('recovers a passed receipt after the short-lived challenge record expires', async () => {
@@ -96,9 +103,9 @@ it('keeps the same answer for retry after an unknown network outcome', async () 
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
     setter.call(input, 'some words'); input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await act(async () => container.querySelector('textarea')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(container.textContent).toContain('Connection lost');
-  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await act(async () => container.querySelector('textarea')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(vi.mocked(communityRequest).mock.calls[0][1]).toEqual(vi.mocked(communityRequest).mock.calls[1][1]);
   expect(container.textContent).toContain('Publish checked score');
 });

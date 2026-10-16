@@ -164,7 +164,7 @@ and skips the obsolete repair.
 ## Verification
 
 The optional daily leaderboard freezes a server-scored replay at completion,
-then publishes only on request. Scores of at least 100 WPM require a separate
+then publishes only on request. Every listed score requires a separate
 image transcription check. This supports typing ability, not human identity or
 proof that the original daily replay was human. Request paths, concurrency rules,
 limits, tests and the feature-flag rollback are in [COMMUNITY.md](COMMUNITY.md).

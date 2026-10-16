@@ -10,10 +10,9 @@ The interface reuses the existing result panels, buttons and score-list styles.
 ```text
 first keystroke -> POST /api/runs/start -> date's DailyLeaderboard (SQLite)
 finish typing  -> POST /api/runs/finish -> private, immutable first result
-  below 100 WPM -> user posts -> public top 50
-  at least 100 -> SpeedVerification object for this browser
-                 prepare PNG -> start server clock -> reveal image
-                 submit transcription -> receipt -> user posts checked score
+               -> SpeedVerification object for this browser
+                  prepare PNG -> start server clock -> reveal image
+                  submit transcription -> receipt -> user posts -> top 50
 ```
 
 - [handleCommunity](../worker/verificationRoutes.ts) creates an HttpOnly,
@@ -41,15 +40,24 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   does not restart it. One active passage and three new passages per 15 minutes
   are enforced transactionally. Identical finish retries recover the saved
   outcome for 15 minutes; another answer cannot overwrite it.
-- The check requires `ceil(dailyWpm * 0.75)` WPM and at least 95% matching text.
+- Every public score must pass the check, at any WPM. The check requires
+  `max(1, ceil(dailyWpm * 0.75))` WPM and at least 95% matching text.
   [scoreVerification](../src/lib/verification.ts) normalizes case/whitespace and
   uses edit distance, so one missing letter does not shift every later letter.
   Net matching characters determine measured speed. Claims above 400 WPM are
   rejected. The server derives the claim from the private daily result.
-- Publishing a fast score reads a receipt through a private binding and checks
+- Publishing a score reads a receipt through a private binding and checks
   its date, corpus hash, expiry and speed. A browser cannot supply its own badge.
   The top 50 use full-precision WPM, then accuracy, completion time and stable ID.
   Public JSON exposes only alias, result ID, WPM, accuracy and check status.
+- The optional nickname is chosen when posting and can be edited from the same
+  browser afterward, without replacing the score. The server normalizes Unicode
+  and whitespace, accepts 2–24 letters/numbers plus spaces, periods, underscores
+  and hyphens, and rejects markup/control characters. Blank selects the generated
+  alias. A local nickname preference carries across days. Names are not unique,
+  authenticated identities or reserved handles; no profanity filter is claimed.
+  Nickname updates use the same cookie ownership check as posting. Public reads
+  can retain their previous response for up to ten seconds.
 - Date objects remove records after 35 days. Verification images/answers are
   erased on completion/cancellation and expired state is removed by alarms;
   successful receipts expire after 30 days. Briefings have separate ownership
@@ -68,7 +76,7 @@ An anonymous cookie is not an account: clearing it or using another browser can
 create another entry. The server cannot prove the client's actual keystroke times.
 No prize-bearing/identity-grade anti-cheat is claimed. The visual check is not
 accessible to everyone; opting out preserves the local game and streak.
-There is no custom alias, cross-device identity, all-time ranking or moderation
+There is no cross-device identity, all-time ranking or moderation
 console. These are deliberate scope limits, not implied existing capabilities.
 
 One date is one ranking writer. SQLite indexes avoid sorting every run in
@@ -86,10 +94,11 @@ there is no new paid API call per check and no claimed fixed daily cost.
    Its existing authenticated `/_internal/seed?date=YYYY-MM-DD` endpoint can seed
    a synthetic fixture with a matching date/game number using a local-only admin
    token. Never seed test scores or fixture briefings into production.
-3. Play locally. Confirm the result is saved privately before posting. Below
-   100 WPM, post it and refresh the board. A 100+ result should require a separate
-   passage, stay absent from the board until passed/published, and retain the
-   original timer after refreshing. Cancelling does not change the local result.
+3. Play locally. Confirm the result is saved privately before posting. Every
+   result should require a separate passage, stay absent from the board until
+   passed/published, and retain the original timer after refreshing. Set a nickname
+   when posting, edit it afterward, and confirm the score and entry ID stay fixed.
+   Cancelling does not change the local result.
 4. Set `KEYWULF_COMMUNITY_ENABLED = "false"` locally and confirm
    `/api/community` reports false, community routes return 503, and the daily
    briefing and ordinary play still work. Restore true; stored scores survive.

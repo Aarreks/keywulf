@@ -19,6 +19,9 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState('');
+  const [nickname, setNickname] = useState(() => {
+    try { return localStorage.getItem('keywulf.nickname') || ''; } catch { return ''; }
+  });
   const [imageReady, setImageReady] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -36,7 +39,10 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     controller.current = active;
     const currentRun = finish ? finish.then(run => ({ run })) : getRankedRun(date, active.signal);
     void Promise.all([currentRun, getVerification(active.signal)]).then(([current, status]) => {
-      if (!active.signal.aborted && version === revision.current) { setRun(current.run); setVerification(status); }
+      if (!active.signal.aborted && version === revision.current) {
+        setRun(current.run); setVerification(status);
+        if (current.run?.status === 'published') setNickname(current.run.name);
+      }
     }).catch(err => { if (!active.signal.aborted && version === revision.current) setError(err instanceof Error ? err.message : 'Leaderboard unavailable'); });
     return () => active.abort();
   }, [date, finish]);
@@ -71,31 +77,45 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const hasReceipt = run && receipt && receipt.date === run.date && receipt.corpusHash === run.corpusHash &&
     receipt.validUntil > verification.serverNow && receipt.requiredWpm >= requiredVerificationWpm(run.wpm!);
   const activeAttempt = attempt && ['ready', 'running'].includes(attempt.status);
+  async function publish(signal: AbortSignal) {
+    const result = await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: run!.id, nickname }, signal);
+    if (!signal.aborted) {
+      setRun(result.run); setNickname(result.run.name);
+      try { localStorage.setItem('keywulf.nickname', nickname.trim() ? result.run.name : ''); } catch { /* Posting already succeeded. */ }
+    }
+  }
 
   return <section className="panel result" aria-labelledby="community-result-title">
     <h2 className="result__label" id="community-result-title">Daily leaderboard</h2>
     {run?.status === 'published' ? <p role="status">Posted as <strong>{run.name}</strong> · {formatWpm(run.wpm!)} WPM{run.verified ? ' · Speed checked' : ''}.</p>
       : run?.status === 'pending' ? <p>Your {formatWpm(run.wpm!)} WPM score is saved privately. Pass the speed check to publish it.</p>
-        : <p>Post your first official run under a generated alias. Ranking uses continuous server time; pauses can make a run ineligible.</p>}
+        : <p>Join with your first official run. Ranking uses continuous server time; pauses can make a run ineligible.</p>}
     {error && <p role="alert">{error}</p>}
-    {!run || run.status === 'running' || run.status === 'unpublished' ? <button className="btn" disabled={busy || ((!replay || (!start && run?.status !== 'running')) && run?.status !== 'unpublished')} onClick={() => void perform(async signal => {
+    {run && run.status !== 'running' && <form onSubmit={event => {
+      event.preventDefault();
+      if (run.status === 'published' || hasReceipt) void perform(publish);
+    }}>
+      <label className="field__label" htmlFor="leaderboard-nickname">Leaderboard nickname</label>
+      <input className="verification-input" style={{ minHeight: 0 }} id="leaderboard-nickname" type="text" maxLength={48}
+        value={nickname} placeholder={run.name} autoComplete="off" spellCheck={false} disabled={busy}
+        aria-describedby="nickname-hint" onChange={event => setNickname(event.target.value)} />
+      <p className="field__desc" id="nickname-hint">2–24 letters or numbers; spaces, . _ - allowed. Leave blank for a generated name.</p>
+      {run.status === 'published' && <button className="btn" disabled={busy || nickname === run.name}>{busy ? 'Saving…' : 'Save nickname'}</button>}
+    </form>}
+    {!run || run.status === 'running' ? <button className="btn" disabled={busy || !replay || (!start && run?.status !== 'running')} onClick={() => void perform(async signal => {
       let ranked = finish ? await finish : run;
       if (!ranked || ranked.status === 'running') {
         const begun = start ? await start : ranked!;
         ranked = (await communityRequest<{ run: RankedRun }>('runs/finish', { date, id: begun.id, replay, elapsedMs }, signal)).run;
       }
-      if (ranked.status === 'unpublished') ranked = (await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: ranked.id }, signal)).run;
       if (!signal.aborted) setRun(ranked);
-    })}>{busy ? 'Saving…' : 'Post official result'}</button> : null}
+    })}>{busy ? 'Saving…' : 'Join leaderboard'}</button> : null}
     {(!run || run.status === 'running') && (!replay || (!start && run?.status !== 'running')) && <p className="start__hint">This result has no complete timed replay. You can join with your next daily run.</p>}
     {canCheck && !activeAttempt && <>
       {attempt?.result && <p role="status">{attempt.result.passed ? `Speed check passed at ${formatWpm(attempt.result.measuredWpm)} WPM.`
         : attempt.result.reason === 'accuracy' ? 'The passage needs at least 95% matching text. Correct mistakes before submitting.' : 'The required speed was not reached. You can request another passage.'}</p>}
       <div className="result__actions">
-        {(hasReceipt || attempt?.status === 'passed') && <button className="btn btn--primary" disabled={busy} onClick={() => void perform(async signal => {
-          const result = await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: run.id }, signal);
-          if (!signal.aborted) setRun(result.run);
-        })}>Publish checked score</button>}
+        {(hasReceipt || attempt?.status === 'passed') && <button className="btn btn--primary" disabled={busy} onClick={() => void perform(publish)}>Publish checked score</button>}
         <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
           const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
           if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; setImageReady(false); }

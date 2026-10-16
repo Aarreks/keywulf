@@ -17,7 +17,7 @@ const WORDS = ('after again almost along answer around autumn before below bette
 
 export function createVerificationPassage(requiredWpm: number): string {
   // At least twenty seconds of typing at the required speed, never a tiny burst.
-  const minChars = Math.max(200, Math.ceil(requiredWpm * 5 / 3));
+  const minChars = Math.max(20, Math.ceil(requiredWpm * 5 / 3));
   const random = crypto.getRandomValues(new Uint32Array(160));
   const words: string[] = [];
   let length = 0;

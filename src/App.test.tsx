@@ -70,7 +70,7 @@ describe('visitor flows', () => {
     vi.mocked(fetchTodayChallenge).mockResolvedValue(challenge);
     vi.mocked(communityRequest).mockResolvedValue({ enabled: true });
     vi.mocked(startRankedRun).mockResolvedValue(run);
-    vi.mocked(finishRankedRun).mockResolvedValue({ ...run, status: 'unpublished', wpm: 70 });
+    vi.mocked(finishRankedRun).mockResolvedValue({ ...run, status: 'pending', wpm: 70 });
     await renderApp(); await clickButton('Start');
     await act(async () => {
       const input = container.querySelector('textarea')!;
@@ -79,7 +79,7 @@ describe('visitor flows', () => {
     });
     expect(finishRankedRun).toHaveBeenCalledTimes(1);
     expect(vi.mocked(finishRankedRun).mock.calls[0].slice(1, 3)).toEqual([challenge.date, corpus]);
-    expect(container.textContent).toContain('Post official result');
+    expect(container.textContent).toContain('Pass the speed check to publish it');
     expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).not.toContain('runs/publish');
     expect(loadState().results[challenge.date].replay).toBe(corpus);
   });

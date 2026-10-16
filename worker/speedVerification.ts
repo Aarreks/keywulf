@@ -2,7 +2,7 @@ import type { Storage } from './index';
 import {
   normalizeVerificationText, requiredVerificationWpm, scoreVerification,
   VERIFICATION_DURATION_MS, VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
-  VERIFICATION_RECEIPT_MS, VERIFICATION_THRESHOLD_WPM,
+  VERIFICATION_RECEIPT_MS,
   type VerificationAttempt, type VerificationReceipt, type VerificationStatus,
 } from '../src/lib/verification';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
@@ -153,7 +153,7 @@ export class SpeedVerification {
   private async issue(payload: Record<string, unknown>): Promise<Response> {
     const { date, claimedWpm, corpusHash } = payload;
     if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof corpusHash !== 'string' || !/^[a-f0-9]{64}$/.test(corpusHash) ||
-        typeof claimedWpm !== 'number' || !Number.isFinite(claimedWpm) || claimedWpm < VERIFICATION_THRESHOLD_WPM || claimedWpm > VERIFICATION_MAX_CLAIM_WPM) {
+        typeof claimedWpm !== 'number' || !Number.isFinite(claimedWpm) || claimedWpm < 0 || claimedWpm > VERIFICATION_MAX_CLAIM_WPM) {
       return verificationJson({ error: 'Invalid speed verification request' }, 400);
     }
     // Avoid rendering another image for known retries/rate limits. The same

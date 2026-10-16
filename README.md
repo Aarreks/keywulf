@@ -12,8 +12,8 @@ and types it as a typing test. Wordle-style daily identity; typing-game feel.
   still serve directly.
 - **All the "dynamic" is client-side**: the performance-reactive color system,
   live WPM/accuracy/telemetry, and animations are computed in the browser.
-- **Optional daily leaderboard**: server-scored first runs under generated aliases,
-  with an image-based speed check for scores of at least 100 WPM. Built with
+- **Optional daily leaderboard**: server-scored first runs under chosen nicknames
+  or generated aliases, with an image-based speed check before any score is listed. Built with
   SQLite Durable Objects and an existing Rust/WASM CAPTCHA renderer; no account
   or extra model call. [Design, verification and rollback](docs/COMMUNITY.md).
 

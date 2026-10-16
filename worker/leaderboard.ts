@@ -1,6 +1,6 @@
 import type { Env } from './index';
-import { replayScore, type RankedRun } from '../src/lib/leaderboard';
-import { requiredVerificationWpm, type VerificationStatus, VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_THRESHOLD_WPM } from '../src/lib/verification';
+import { normalizeNickname, replayScore, type RankedRun } from '../src/lib/leaderboard';
+import { requiredVerificationWpm, type VerificationStatus, VERIFICATION_MAX_CLAIM_WPM } from '../src/lib/verification';
 import { verificationJson } from './speedVerification';
 
 export interface LeaderboardStorage {
@@ -11,11 +11,14 @@ export interface LeaderboardStorage {
 }
 interface Row extends Record<string, unknown> {
   player: string; id: string; name: string; date: string; corpus_hash: string;
-  status: RankedRun['status']; started_at: number; replay_hash: string | null;
+  status: RankedRun['status'] | 'unpublished'; started_at: number; replay_hash: string | null;
   wpm: number | null; accuracy: number | null; verified: number; completed_at: number | null;
 }
 const view = (row: Row): RankedRun => ({ id: row.id, name: row.name, date: row.date, corpusHash: row.corpus_hash,
-  status: row.status, startedAt: row.started_at, wpm: row.wpm, accuracy: row.accuracy, verified: Boolean(row.verified) });
+  // Older low-speed rows may have bypassed the check. Treat them as private
+  // pending results until they satisfy the same rule as every new entry.
+  status: row.status === 'unpublished' || (row.status === 'published' && !row.verified) ? 'pending' : row.status,
+  startedAt: row.started_at, wpm: row.wpm, accuracy: row.accuracy, verified: Boolean(row.verified) });
 
 export async function sha256(text: string): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -45,7 +48,7 @@ export class DailyLeaderboard {
         return verificationJson({ run: row ? view(row) : null });
       }
       if (url.pathname !== '/top') return verificationJson({ error: 'Not found' }, 404);
-      const entries = sql.exec<Row>(`SELECT id, name, wpm, accuracy, verified FROM runs WHERE status = 'published'
+      const entries = sql.exec<Row>(`SELECT id, name, wpm, accuracy, verified FROM runs WHERE status = 'published' AND verified = 1
         ORDER BY wpm DESC, accuracy DESC, completed_at ASC, id ASC LIMIT 50`).toArray()
         .map(row => ({ id: row.id, name: row.name, wpm: row.wpm, accuracy: row.accuracy, verified: Boolean(row.verified) }));
       return Response.json({ date: url.searchParams.get('date'), entries }, { headers: {
@@ -90,21 +93,23 @@ export class DailyLeaderboard {
           const score = replayScore(game.corpus, payload.replay as string, Math.min(120_000, Math.max(wallTime, payload.elapsedMs as number)));
           if (score.wpm > VERIFICATION_MAX_CLAIM_WPM) throw new Error('Score exceeds the supported range');
           sql.exec(`UPDATE runs SET status = ?, replay_hash = ?, wpm = ?, accuracy = ?, completed_at = ? WHERE player = ? AND status = 'running'`,
-            score.wpm >= VERIFICATION_THRESHOLD_WPM ? 'pending' : 'unpublished', replayHash, score.wpm, score.accuracy, Date.now(), player);
+            'pending', replayHash, score.wpm, score.accuracy, Date.now(), player);
           return { row: rowFor(player)! };
         } catch (err) { return { error: err instanceof Error ? err.message : 'Invalid replay', status: 400 }; }
       });
       return outcome.row ? verificationJson({ run: view(outcome.row) }) : verificationJson({ error: outcome.error }, outcome.status);
     }
     if (url.pathname === '/publish') {
-      if (row.status === 'published') return verificationJson({ run: view(row) });
-      // Finishing freezes the timed replay privately. Public posting can happen
-      // later without counting time spent reading the results screen.
-      if (row.status === 'unpublished') {
-        sql.exec("UPDATE runs SET status = 'published' WHERE player = ? AND status = 'unpublished'", player);
+      let nickname: string | null = null;
+      if (payload.nickname !== undefined) {
+        try { nickname = normalizeNickname(payload.nickname) || `Typist ${(await sha256(player)).slice(0, 8).toUpperCase()}`; }
+        catch (err) { return verificationJson({ error: (err as Error).message }, 400); }
+      }
+      if (row.status === 'published' && row.verified) {
+        sql.exec('UPDATE runs SET name = COALESCE(?, name) WHERE player = ?', nickname, player);
         return verificationJson({ run: view(rowFor(player)!) });
       }
-      if (row.status !== 'pending' || !this.env.VERIFICATIONS) return verificationJson({ error: 'No pending score' }, 409);
+      if (row.status === 'running' || !this.env.VERIFICATIONS) return verificationJson({ error: 'No pending score' }, 409);
       const response = await this.env.VERIFICATIONS.get(this.env.VERIFICATIONS.idFromName(player)).fetch(new Request('https://verification/status'));
       if (!response.ok) return verificationJson({ error: 'Speed verification is unavailable' }, 503);
       const { receipt } = await response.json() as VerificationStatus;
@@ -113,7 +118,7 @@ export class DailyLeaderboard {
         return verificationJson({ error: 'Pass the speed check before publishing this score' }, 403);
       }
       // The receipt comes from our private binding, never a browser-provided badge.
-      sql.exec("UPDATE runs SET status = 'published', verified = 1 WHERE player = ? AND id = ? AND status = 'pending'", player, row.id);
+      sql.exec("UPDATE runs SET status = 'published', verified = 1, name = COALESCE(?, name) WHERE player = ? AND id = ? AND status != 'running'", nickname, player, row.id);
       return verificationJson({ run: view(rowFor(player)!) });
     }
     return verificationJson({ error: 'Not found' }, 404);

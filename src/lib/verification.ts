@@ -1,5 +1,4 @@
 // Public protocol only. The passage and challenge image are server-owned.
-export const VERIFICATION_THRESHOLD_WPM = 100;
 export const VERIFICATION_MAX_CLAIM_WPM = 400;
 export const VERIFICATION_DURATION_MS = 60_000;
 export const VERIFICATION_READY_MS = 5 * 60_000;
@@ -48,7 +47,7 @@ export interface VerificationStatus {
 }
 
 export function requiredVerificationWpm(claimedWpm: number): number {
-  return Math.ceil(claimedWpm * 0.75);
+  return Math.max(1, Math.ceil(claimedWpm * 0.75));
 }
 
 export function normalizeVerificationText(text: string): string {

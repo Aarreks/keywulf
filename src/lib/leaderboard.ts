@@ -6,7 +6,7 @@ export interface RankedRun {
   date: string;
   corpusHash: string;
   name: string;
-  status: 'running' | 'unpublished' | 'pending' | 'published';
+  status: 'running' | 'pending' | 'published';
   startedAt: number;
   wpm: number | null;
   accuracy: number | null;
@@ -20,6 +20,17 @@ export interface LeaderboardEntry {
   verified: boolean;
 }
 export interface LeaderboardPage { date: string; entries: LeaderboardEntry[] }
+
+/** Display text only: no markup or controls, and no identity/uniqueness claim. */
+export function normalizeNickname(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 80) throw new Error('Enter a nickname of 2–24 letters or numbers.');
+  const nickname = value.normalize('NFKC').trim().replace(/\s+/g, ' ');
+  if (!nickname) return '';
+  if (Array.from(nickname).length < 2 || Array.from(nickname).length > 24 || !/^[\p{L}\p{N}][\p{L}\p{M}\p{N} ._-]*$/u.test(nickname)) {
+    throw new Error('Use 2–24 letters or numbers, spaces, periods, underscores or hyphens.');
+  }
+  return nickname;
+}
 
 /** Replay characters/backspaces against the server's immutable daily corpus. */
 export function replayScore(corpus: string, replay: string, elapsedMs: number) {

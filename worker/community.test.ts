@@ -5,7 +5,7 @@ import { DailyLeaderboard, type LeaderboardStorage } from './leaderboard';
 import { SpeedVerification } from './speedVerification';
 import worker, { type Env, type Storage } from './index';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
-import { replayScore, type RankedRun } from '../src/lib/leaderboard';
+import { normalizeNickname, replayScore, type RankedRun } from '../src/lib/leaderboard';
 import { scoreVerification, type VerificationStatus } from '../src/lib/verification';
 import sample from '../src/data/sampleChallenge.json';
 
@@ -64,6 +64,15 @@ const board = () => env.LEADERBOARDS!.get(date) as DailyLeaderboard;
 async function start(player = 'alice', corpus = 'a'.repeat(500)): Promise<RankedRun> {
   return (await (await post(board(), 'start', { player, date, corpus, corpusHash: hash })).json() as { run: RankedRun }).run;
 }
+async function passSpeedCheck(player: string, claimedWpm: number) {
+  const actor = verification(player);
+  const created = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm })).json() as VerificationStatus;
+  expect(created.attempt).not.toBeNull();
+  await post(actor, 'start', { id: created.attempt!.id });
+  vi.advanceTimersByTime(20_000);
+  const passed = await (await post(actor, 'finish', { id: created.attempt!.id, text: answer })).json() as VerificationStatus;
+  expect(passed.receipt).not.toBeNull();
+}
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(`${date}T12:00:00Z`));
@@ -92,6 +101,13 @@ beforeEach(() => {
 afterEach(() => { databases.splice(0).forEach(database => database.close()); vi.useRealTimers(); });
 
 describe('server scoring', () => {
+  it('normalizes nicknames and rejects markup, controls, oversized and misleading input types', () => {
+    expect(normalizeNickname('  Zoë   Fox_2  ')).toBe('Zoë Fox_2');
+    expect(normalizeNickname(' ')).toBe('');
+    for (const name of ['x', '<script>', 'hello\u202Eworld', 'a'.repeat(25), 123, { name: 'Alice' }]) {
+      expect(() => normalizeNickname(name)).toThrow();
+    }
+  });
   it('replays corrections without erasing historical errors', () => {
     const score = replayScore('abc', 'ax\bbc', 1000);
     expect(score.wpm).toBe(36); expect(score.accuracy).toBe(0.75);
@@ -175,6 +191,8 @@ describe('daily leaderboard consistency', () => {
     expect((await replies[0].json() as { run: RankedRun }).run.wpm).toBe(50);
     expect((await (await board().fetch(new Request(`https://board/top?date=${date}`))).json() as { entries: unknown[] }).entries).toHaveLength(0);
     vi.advanceTimersByTime(10 * 60_000);
+    expect((await post(board(), 'publish', { player: 'alice', id: run.id })).status).toBe(403);
+    await passSpeedCheck('alice', 50);
     expect((await post(board(), 'publish', { player: 'alice', id: run.id })).status).toBe(200);
     expect((await post(board(), 'finish', { ...payload, replay: 'x'.repeat(500) })).status).toBe(409);
     expect((await post(board(), 'finish', { ...payload, player: 'bob' })).status).toBe(404);
@@ -195,6 +213,19 @@ describe('daily leaderboard consistency', () => {
     expect(entries).toHaveLength(1); expect(entries[0].verified).toBe(true);
     expect(JSON.stringify(entries)).not.toContain('alice'); expect(JSON.stringify(entries)).not.toContain('started_at');
   });
+  it('allows owner-only nickname edits without replacing the score or creating another entry', async () => {
+    const run = await start(); vi.advanceTimersByTime(120_000);
+    await post(board(), 'finish', { player: 'alice', id: run.id, replay: 'a'.repeat(500), elapsedMs: 120_000 });
+    await passSpeedCheck('alice', 50);
+    expect((await post(board(), 'publish', { player: 'alice', id: run.id, nickname: '<b>Fox</b>' })).status).toBe(400);
+    const published = await (await post(board(), 'publish', { player: 'alice', id: run.id, nickname: '  Zoë Fox  ' })).json() as { run: RankedRun };
+    expect(published.run.name).toBe('Zoë Fox'); expect(published.run.wpm).toBe(50);
+    expect((await post(board(), 'publish', { player: 'bob', id: run.id, nickname: 'Stolen' })).status).toBe(404);
+    const renamed = await (await post(board(), 'publish', { player: 'alice', id: run.id, nickname: 'Fox 2' })).json() as { run: RankedRun };
+    expect(renamed.run.name).toBe('Fox 2'); expect(renamed.run.id).toBe(run.id); expect(renamed.run.verified).toBe(true);
+    const fallback = await (await post(board(), 'publish', { player: 'alice', id: run.id, nickname: '' })).json() as { run: RankedRun };
+    expect(fallback.run.name).toBe(run.name);
+  });
   it('rejects a receipt for another corpus and does not let reloads reset the timer', async () => {
     const run = await start(); vi.advanceTimersByTime(30_000);
     await post(board(), 'finish', { player: 'alice', id: run.id, replay: 'a'.repeat(500), elapsedMs: 30_000 });
@@ -211,6 +242,7 @@ describe('daily leaderboard consistency', () => {
     vi.advanceTimersByTime(120_000);
     await post(board(), 'finish', { player: 'alice', id: alice.id, replay: 'x\b' + 'a'.repeat(500), elapsedMs: 120_000 });
     await post(board(), 'finish', { player: 'bob', id: bob.id, replay: 'a'.repeat(500), elapsedMs: 120_000 });
+    await passSpeedCheck('alice', 50); await passSpeedCheck('bob', 50);
     await post(board(), 'publish', { player: 'alice', id: alice.id });
     await post(board(), 'publish', { player: 'bob', id: bob.id });
     const result = await (await board().fetch(new Request(`https://board/top?date=${date}`))).json() as { entries: { id: string }[] };
