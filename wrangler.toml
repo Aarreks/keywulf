@@ -47,7 +47,7 @@ tag = "speed-verification-v1"
 new_sqlite_classes = ["SpeedVerification", "DailyLeaderboard"]
 
 # A coarse per-location abuse limit; the object enforces the precise
-# three-passages-per-15-minutes budget for each anonymous browser.
+# new-passage budget for each anonymous browser.
 [[ratelimits]]
 name = "VERIFICATION_LIMITER"
 namespace_id = "10761016"

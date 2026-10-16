@@ -42,8 +42,10 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   For example, 200 characters at 75 WPM allows 32.0 seconds. The countdown shows
   tenths and never displays zero before expiry. There is no independent 60-second
   cap; longer/slower passages can allow more time. A start retry does not restart it. One active passage
-  and three new passages per 15 minutes
-  are enforced transactionally. Identical finish retries recover the saved
+  and twenty new passages per five minutes
+  are enforced transactionally. Existing passages do not consume another slot
+  on reload/retry. Old three-per-fifteen-minute lockouts reset once when the new
+  policy is first used. Identical finish retries recover the saved
   outcome for 15 minutes; another answer cannot overwrite it.
 - Every public score must pass the check, at any WPM. The check requires
   `max(1, ceil(dailyWpm * 0.75))` WPM after completing the exact text. There is no
@@ -98,6 +100,11 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
 The image renderer is adapted from an existing Workers-compatible Rust/WASM
 CAPTCHA generator; see [provenance and rebuild instructions](../third_party/captcha/NOTICE.md).
 It runs locally in the Worker: no image service or extra model call is needed.
+Randomized letter offsets, smooth two-axis wave distortion, and interference
+scaled to image height make the image harder to segment than plain text with
+speckles. This has not been measured against OCR engines and is not an OCR-proof
+claim. Existing active passages keep their original image; new passages use the
+updated renderer.
 The frontend receives pixels and a salted whole-passage hash, never the plaintext
 answer in JSON, DOM text or PNG metadata.
 

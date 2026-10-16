@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
-import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
+import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS, VERIFICATION_PASSAGE_ALLOWANCE, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
 import { formatWpm } from '../lib/scoring';
 
 interface Props {
@@ -268,7 +268,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     </>}
     {activeAttempt && <div className="panel result">
       <h3>Speed verification</h3>
-      <p>Complete the text at <strong>{attempt.requiredWpm} WPM</strong> or faster. It submits automatically when the words match. Letter case does not matter. Three passages per 15 minutes.</p>
+      <p>Complete the text at <strong>{attempt.requiredWpm} WPM</strong> or faster. It submits automatically when the words match. Letter case does not matter. {VERIFICATION_PASSAGE_ALLOWANCE}.</p>
       <>
         <p className="tnum" role="timer" aria-label="Time remaining">{attempt.status === 'ready' && !starting
           ? `${(Math.ceil(verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) / 100) / 10).toFixed(1)} seconds · Starts on your first character`

@@ -6,14 +6,16 @@ revision `c315b758baacc4c8968a624a884748ed7c5f2dfb`, Rust renderer under
 [LICENSE](LICENSE). This is a small upstream project, not an audited anti-bot service.
 
 Keywulf changes: wrap a bounded word passage into a 720-pixel-wide image;
-return PNG bytes directly; use six interference lines; disable unused image
+return PNG bytes directly; add small randomized letter offsets and smooth
+two-axis wave distortion with interpolated sampling; scale noise/interference
+to image dimensions while reserving outer margins; disable unused image
 codecs/base64 dependency. Replace the separately licensed upstream Panchang font
 with Courier Prime Regular from [Google Fonts](https://github.com/google/fonts/tree/main/ofl/courierprime).
 The font's SIL Open Font License is in [FONT-LICENSE.txt](FONT-LICENSE.txt).
 No upstream Panchang font or its restrictive font license is shipped.
 
 The source and Cargo.lock are committed here. The generated JS, declarations and
-302,403-byte WASM module are committed under `worker/captcha/`; ordinary app
+310,890-byte WASM module are committed under `worker/captcha/`; ordinary app
 builds and deploys require only Node, not Rust. Do not hand-edit generated files.
 To rebuild from the repository root with Rust's `wasm32-unknown-unknown` target
 and wasm-pack 0.15.0:

@@ -3,6 +3,7 @@ import {
   normalizeVerificationText, requiredVerificationWpm, scoreVerification, verificationTextHash, verificationTimeLimitMs,
   VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
   VERIFICATION_RECEIPT_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS,
+  VERIFICATION_PASSAGE_LIMIT, VERIFICATION_PASSAGE_WINDOW_MS, VERIFICATION_PASSAGE_ALLOWANCE,
   type VerificationAttempt, type VerificationReceipt, type VerificationStatus,
 } from '../src/lib/verification';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
@@ -16,13 +17,12 @@ interface Attempt extends VerificationAttempt {
 interface RecordState {
   attempt?: Attempt;
   receipt?: VerificationReceipt;
-  budget?: { until: number; used: number };
+  budget?: { until: number; used: number; windowMs?: number };
 }
 interface VerificationStorage extends Storage {
   setAlarm(time: number): Promise<void>;
 }
-const ATTEMPT_WINDOW_MS = 15 * 60_000;
-const ATTEMPT_LIMIT = 3;
+const FINISHED_RETRY_WINDOW_MS = 15 * 60_000;
 
 function attemptDeadline(attempt: Attempt): number {
   // Derive this for existing running records too, so deployment cannot leave a
@@ -51,7 +51,7 @@ function publicStatus(record: RecordState, now: number): VerificationStatus {
     } : null,
     receipt: record.receipt && now < record.receipt.validUntil ? record.receipt : null,
     serverNow: now,
-    retryAt: record.budget && now < record.budget.until && record.budget.used >= ATTEMPT_LIMIT ? record.budget.until : null,
+    retryAt: record.budget?.windowMs === VERIFICATION_PASSAGE_WINDOW_MS && now < record.budget.until && record.budget.used >= VERIFICATION_PASSAGE_LIMIT ? record.budget.until : null,
   };
 }
 
@@ -170,7 +170,7 @@ export class SpeedVerification {
         const result = scoreVerification(attempt.answer, submission!, duration, attempt.requiredWpm);
         attempt.result = result;
         attempt.status = result.passed ? 'passed' : 'failed';
-        attempt.expiresAt = now + ATTEMPT_WINDOW_MS;
+        attempt.expiresAt = now + FINISHED_RETRY_WINDOW_MS;
         attempt.submission = submission;
         attempt.answer = '';
         attempt.image = new Uint8Array();
@@ -207,8 +207,8 @@ export class SpeedVerification {
       return same ? verificationJson(publicStatus(current, Date.now()))
         : verificationJson({ error: 'Finish or cancel your current speed check first' }, 409);
     }
-    if (current.budget && Date.now() < current.budget.until && current.budget.used >= ATTEMPT_LIMIT) {
-      return verificationJson({ error: 'Three passages per 15 minutes. Please try again later.', retryAt: current.budget.until }, 429);
+    if (current.budget?.windowMs === VERIFICATION_PASSAGE_WINDOW_MS && Date.now() < current.budget.until && current.budget.used >= VERIFICATION_PASSAGE_LIMIT) {
+      return verificationJson({ error: `${VERIFICATION_PASSAGE_ALLOWANCE}. Please try again later.`, retryAt: current.budget.until }, 429);
     }
     const requiredWpm = requiredVerificationWpm(claimedWpm);
     const answer = createVerificationPassage(requiredWpm);
@@ -223,8 +223,12 @@ export class SpeedVerification {
         const same = existing.date === date && existing.claimedWpm === claimedWpm && existing.corpusHash === corpusHash;
         return { record, status: same ? 200 : 409, error: same ? undefined : 'Finish or cancel your current speed check first' };
       }
-      if (!record.budget || now >= record.budget.until) record.budget = { used: 0, until: now + ATTEMPT_WINDOW_MS };
-      if (record.budget.used >= ATTEMPT_LIMIT) return { record, status: 429, error: 'Three passages per 15 minutes. Please try again later.' };
+      // Reset old-policy budgets atomically so a pre-deployment lockout cannot
+      // keep a browser on the former three-per-fifteen-minute allowance.
+      if (!record.budget || record.budget.windowMs !== VERIFICATION_PASSAGE_WINDOW_MS || now >= record.budget.until) {
+        record.budget = { used: 0, until: now + VERIFICATION_PASSAGE_WINDOW_MS, windowMs: VERIFICATION_PASSAGE_WINDOW_MS };
+      }
+      if (record.budget.used >= VERIFICATION_PASSAGE_LIMIT) return { record, status: 429, error: `${VERIFICATION_PASSAGE_ALLOWANCE}. Please try again later.` };
       record.budget.used++;
       record.attempt = {
         id, date, corpusHash, claimedWpm, requiredWpm, answer, image, textHash,

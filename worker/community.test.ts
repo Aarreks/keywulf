@@ -220,21 +220,48 @@ describe('single-use speed verification', () => {
     expect((await post(verification(), 'finish', { id, text: 'different' })).status).toBe(409);
     expect((await verification().fetch(new Request(`https://object/image?id=${id}`))).status).toBe(410);
   });
-  it('enforces ownership, expiry, a durable three-attempt budget and cleanup', async () => {
+  it('allows twenty passages per five minutes, then enforces the durable budget and cleanup', async () => {
     const actor = verification();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 20; i++) {
       const created = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
       expect((await post(verification('bob'), 'start', { id: created.attempt!.id })).status).toBe(404);
       await post(actor, 'cancel', { id: created.attempt!.id });
     }
     verifications.delete('alice');
     expect((await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).status).toBe(429);
-    vi.advanceTimersByTime(15 * 60_000);
+    expect((await (await status(verification())).json() as VerificationStatus).retryAt).toBe(Date.now() + 5 * 60_000);
+    vi.advanceTimersByTime(5 * 60_000);
     const next = await (await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
     vi.advanceTimersByTime(5 * 60_000 + 1);
     expect((await post(verification(), 'start', { id: next.attempt!.id })).status).toBe(410);
     await verification().alarm();
     expect((await (await status(verification())).json() as VerificationStatus).attempt).toBeNull();
+  });
+  it('clears a legacy lockout once and preserves the new budget across retries and eviction', async () => {
+    const actor = verification();
+    const store = verificationStores.get('alice')!;
+    await store.put('verification', { budget: { used: 3, until: Date.now() + 15 * 60_000 } });
+    expect((await (await status(actor)).json() as VerificationStatus).retryAt).toBeNull();
+    const first = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    const retry = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    expect(retry.attempt!.id).toBe(first.attempt!.id);
+    expect(await store.get('verification')).toMatchObject({ budget: { used: 1, windowMs: 300_000, until: Date.now() + 300_000 } });
+    await post(actor, 'cancel', { id: first.attempt!.id });
+    verifications.delete('alice');
+    expect((await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).status).toBe(200);
+    expect(await store.get('verification')).toMatchObject({ budget: { used: 2 } });
+  });
+  it('charges overlapping requests for one passage once at the final budget slot', async () => {
+    const actor = verification();
+    const store = verificationStores.get('alice')!;
+    await store.put('verification', { budget: { used: 19, until: Date.now() + 300_000, windowMs: 300_000 } });
+    const replies = await Promise.all([post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 }), post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })]);
+    expect(replies.map(response => response.status)).toEqual([200, 200]);
+    const [one, two] = await Promise.all(replies.map(response => response.json())) as VerificationStatus[];
+    expect(one.attempt!.id).toBe(two.attempt!.id);
+    expect(await store.get('verification')).toMatchObject({ budget: { used: 20 } });
+    await post(actor, 'cancel', { id: one.attempt!.id });
+    expect((await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).status).toBe(429);
   });
   it('never trusts browser elapsed time or a claimed verification score', async () => {
     const created = await (await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;

@@ -4,6 +4,9 @@ export const VERIFICATION_READY_MS = 5 * 60_000;
 export const VERIFICATION_RECEIPT_MS = 30 * 86_400_000;
 export const VERIFICATION_FEEDBACK_INTERVAL_MS = 150;
 export const VERIFICATION_FEEDBACK_COOLDOWN_MS = 100;
+export const VERIFICATION_PASSAGE_LIMIT = 20;
+export const VERIFICATION_PASSAGE_WINDOW_MS = 5 * 60_000;
+export const VERIFICATION_PASSAGE_ALLOWANCE = `${VERIFICATION_PASSAGE_LIMIT} passages per ${VERIFICATION_PASSAGE_WINDOW_MS / 60_000} minutes`;
 
 export interface VerificationFeedback { id: string; mismatchIndex: number | null }
 
