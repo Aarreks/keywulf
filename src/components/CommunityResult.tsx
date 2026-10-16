@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
-import { normalizeVerificationText, requiredVerificationWpm, verificationTextHash, type VerificationStatus } from '../lib/verification';
+import { normalizeVerificationText, requiredVerificationWpm, verificationTextHash, verificationTimeLimitMs, type VerificationStatus } from '../lib/verification';
 import { formatWpm } from '../lib/scoring';
 
 interface Props {
@@ -24,7 +24,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   });
   const [imageReady, setImageReady] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [remainingMs, setRemainingMs] = useState(0);
   const [starting, setStarting] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const controller = useRef<AbortController>();
@@ -58,12 +58,12 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     if (typingClock.current?.id !== attempt.id && attempt.startedAt !== null) {
       typingClock.current = { id: attempt.id, at: performance.now() - (verification.serverNow - attempt.startedAt) };
     }
-    const localDeadline = (typingClock.current?.at ?? performance.now()) + 60_000;
+    const localDeadline = (typingClock.current?.at ?? performance.now()) + verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm);
     deadline.current = attempt.status === 'running'
       ? Math.min(localDeadline, performance.now() + Math.max(0, attempt.expiresAt - verification.serverNow)) : localDeadline;
-    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline.current - performance.now()) / 1000)));
+    const tick = () => setRemainingMs(Math.max(0, deadline.current - performance.now()));
     tick();
-    const timer = setInterval(tick, 250);
+    const timer = setInterval(tick, 50);
     return () => clearInterval(timer);
   }, [attempt, verification, starting]);
 
@@ -104,7 +104,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     // A salted whole-passage hash detects completion without sending the answer
     // to the browser or making a server request for every guessed character.
     void verificationTextHash(attempt.id, candidate).then(hash => {
-      if (!stale && hash === attempt.textHash && performance.now() < deadline.current) {
+      if (!stale && hash === attempt.textHash && performance.now() <= deadline.current) {
         void perform(signal => submit(attempt.id, answer, signal));
       }
     }).catch(() => { if (!stale) setError('Completion check unavailable. Please request a new passage.'); });
@@ -118,7 +118,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     if (!attempt || attempt.status !== 'ready' || !text.length || inFlight.current) return;
     typingClock.current ??= { id: attempt.id, at: performance.now() };
     if (typingClock.current.id !== attempt.id) typingClock.current = { id: attempt.id, at: performance.now() };
-    setSecondsLeft(Math.max(0, Math.ceil((typingClock.current.at + 60_000 - performance.now()) / 1000)));
+    setRemainingMs(Math.max(0, typingClock.current.at + verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) - performance.now()));
     setStarting(true);
     // Typing continues while start is in flight. The server makes retries keep
     // the original start time, and autosubmission waits for its acknowledgement.
@@ -186,21 +186,23 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
       <h3>Speed verification</h3>
       <p>Complete the text at <strong>{attempt.requiredWpm} WPM</strong> or faster. It submits automatically when the words match. Letter case does not matter. Three passages per 15 minutes.</p>
       <>
-        <p className="tnum" role="timer" aria-label="Time remaining">{attempt.status === 'ready' && !starting ? '60 seconds · Starts on your first character' : `${secondsLeft}s remaining · No pause`}</p>
+        <p className="tnum" role="timer" aria-label="Time remaining">{attempt.status === 'ready' && !starting
+          ? `${(Math.ceil(verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) / 100) / 10).toFixed(1)} seconds · Starts on your first character`
+          : `${(Math.ceil(remainingMs / 100) / 10).toFixed(1)}s remaining · No pause`}</p>
         <img className="verification-image" src={`/api/verification/image?id=${attempt.id}&v=${imageRetry}`} alt="Verification passage to transcribe" width="720" height={attempt.imageHeight}
           onLoad={() => setImageReady(true)}
-          onError={() => { setImageReady(false); setError('The passage image could not load. The timer continues.'); }} />
+          onError={() => { setImageReady(false); setError('The passage image could not load. Please reload it.'); }} />
         {!imageReady && <button className="btn btn--ghost" onClick={() => setImageRetry(value => value + 1)}>Reload image</button>}
         <div>
           <label htmlFor="speed-answer">Type the passage</label>
-          <textarea ref={input} className="verification-input" id="speed-answer" value={answer} disabled={(busy && submission.current !== null) || !imageReady || ((attempt.status === 'running' || starting) && secondsLeft === 0)} maxLength={1000}
+          <textarea ref={input} className="verification-input" id="speed-answer" value={answer} disabled={(busy && submission.current !== null) || !imageReady || ((attempt.status === 'running' || starting) && remainingMs === 0)} maxLength={1000}
             autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
             onPaste={event => event.preventDefault()} onDrop={event => event.preventDefault()}
             onChange={event => changeAnswer(event.target.value)} />
           {busy && submission.current !== null && <p role="status">Checking speed…</p>}
           {!busy && submission.current !== null && error && <button className="btn" onClick={() => void perform(signal => submit(attempt.id, submission.current!, signal))}>Retry submission</button>}
         </div>
-        {((attempt.status === 'running' && secondsLeft === 0) || error) && <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
+        {((attempt.status === 'running' && remainingMs === 0) || error) && <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
           const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
           if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); setImageReady(false); }
         })}>Request a new passage</button>}

@@ -5,7 +5,7 @@ import { CommunityResult } from './CommunityResult';
 import { communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
 import type { VerificationStatus } from '../lib/verification';
-import { normalizeVerificationText, verificationTextHash } from '../lib/verification';
+import { normalizeVerificationText, verificationTextHash, verificationTimeLimitMs } from '../lib/verification';
 
 vi.mock('../lib/communityClient', async original => ({
   ...await original<typeof import('../lib/communityClient')>(),
@@ -20,7 +20,7 @@ const run: RankedRun = { id: 'run', name: 'Typist TEST', date: '2026-10-06', cor
   status: 'running', startedAt: 0, wpm: null, accuracy: null, verified: false };
 const empty: VerificationStatus = { attempt: null, receipt: null, serverNow: 1000, retryAt: null };
 const running: VerificationStatus = { ...empty, attempt: { id: 'check', date: run.date, corpusHash: 'hash', claimedWpm: 150,
-  requiredWpm: 113, characterCount: 10, textHash: 'check:some words', imageHeight: 240, status: 'running', startedAt: 1000, expiresAt: 61_000, result: null } };
+  requiredWpm: 113, characterCount: 10, textHash: 'check:some words', imageHeight: 240, status: 'running', startedAt: 1000, expiresAt: 1000 + verificationTimeLimitMs(10, 113), result: null } };
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -44,6 +44,7 @@ it('lets a pending fast score request verification without changing local game s
   expect(container.textContent).toContain('113 WPM');
   expect(container.querySelector('img')).not.toBeNull();
   expect(container.textContent).toContain('Starts on your first character');
+  expect(container.textContent).toContain('1.1 seconds');
   expect(localStorage.getItem('keywulf')).toBe('unchanged');
 });
 
@@ -75,7 +76,7 @@ it('focuses before typing, starts on the first character and keeps typing enable
   expect(input.disabled).toBe(false); expect(input).toHaveFocus();
   await enterAnswer('some words');
   expect(communityRequest).toHaveBeenCalledTimes(1);
-  await act(async () => acknowledge({ ...running, serverNow: 11_000, attempt: { ...running.attempt!, startedAt: 11_000, expiresAt: 71_000 } }));
+  await act(async () => acknowledge({ ...running, serverNow: 11_000, attempt: { ...running.attempt!, startedAt: 11_000, expiresAt: 11_000 + verificationTimeLimitMs(10, 113) } }));
   expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/start', 'verification/finish']);
 });
 
@@ -151,7 +152,11 @@ it('uses the running server deadline, blocks paste and permits a new passage aft
   const paste = new Event('paste', { bubbles: true, cancelable: true });
   await act(async () => { input.dispatchEvent(paste); });
   expect(paste.defaultPrevented).toBe(true);
-  await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });
+  expect(container.textContent).toContain('1.1s remaining');
+  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  expect(container.textContent).toContain('1.0s remaining');
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(container.textContent).toContain('0.0s remaining');
   expect(input.disabled).toBe(true);
   expect(container.textContent).toContain('Request a new passage');
 });

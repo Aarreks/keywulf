@@ -1,7 +1,7 @@
 import type { Storage } from './index';
 import {
-  normalizeVerificationText, requiredVerificationWpm, scoreVerification, verificationTextHash,
-  VERIFICATION_DURATION_MS, VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
+  normalizeVerificationText, requiredVerificationWpm, scoreVerification, verificationTextHash, verificationTimeLimitMs,
+  VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
   VERIFICATION_RECEIPT_MS,
   type VerificationAttempt, type VerificationReceipt, type VerificationStatus,
 } from '../src/lib/verification';
@@ -23,6 +23,13 @@ interface VerificationStorage extends Storage {
 const ATTEMPT_WINDOW_MS = 15 * 60_000;
 const ATTEMPT_LIMIT = 3;
 
+function attemptDeadline(attempt: Attempt): number {
+  // Derive this for existing running records too, so deployment cannot leave a
+  // separate fixed timeout in force. Completed results keep their retry window.
+  return attempt.status === 'running' && attempt.startedAt !== null
+    ? attempt.startedAt + verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) : attempt.expiresAt;
+}
+
 export function verificationJson(value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: {
     'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', Vary: 'Cookie',
@@ -38,8 +45,8 @@ function publicStatus(record: RecordState, now: number): VerificationStatus {
       claimedWpm: attempt.claimedWpm, requiredWpm: attempt.requiredWpm,
       characterCount: attempt.characterCount, imageHeight: attempt.imageHeight,
       textHash: ['ready', 'running'].includes(attempt.status) ? attempt.textHash : undefined,
-      status: ['ready', 'running'].includes(attempt.status) && now >= attempt.expiresAt ? 'expired' : attempt.status,
-      expiresAt: attempt.expiresAt, startedAt: attempt.startedAt, result: attempt.result,
+      status: ['ready', 'running'].includes(attempt.status) && now > attemptDeadline(attempt) ? 'expired' : attempt.status,
+      expiresAt: attemptDeadline(attempt), startedAt: attempt.startedAt, result: attempt.result,
     } : null,
     receipt: record.receipt && now < record.receipt.validUntil ? record.receipt : null,
     serverNow: now,
@@ -52,7 +59,7 @@ export class SpeedVerification {
   constructor(private state: { storage: VerificationStorage }) {}
 
   private async scheduleCleanup(record: RecordState): Promise<void> {
-    const deadlines = [record.attempt?.expiresAt, record.receipt?.validUntil, record.budget?.until]
+    const deadlines = [record.attempt ? attemptDeadline(record.attempt) + 1 : undefined, record.receipt?.validUntil, record.budget?.until]
       .filter((time): time is number => time !== undefined && time > Date.now());
     if (deadlines.length) await this.state.storage.setAlarm(Math.min(...deadlines));
   }
@@ -61,7 +68,7 @@ export class SpeedVerification {
     const record = await this.state.storage.transaction(async storage => {
       const record = await storage.get<RecordState>('verification') ?? {};
       const now = Date.now();
-      if (record.attempt && record.attempt.expiresAt <= now) delete record.attempt;
+      if (record.attempt && attemptDeadline(record.attempt) < now) delete record.attempt;
       if (record.receipt && record.receipt.validUntil <= now) delete record.receipt;
       if (record.budget && record.budget.until <= now) delete record.budget;
       if (Object.keys(record).length) await storage.put('verification', record);
@@ -85,7 +92,7 @@ export class SpeedVerification {
       if (action !== 'image') return verificationJson({ error: 'Not found' }, 404);
       const attempt = record.attempt;
       if (!attempt || attempt.id !== url.searchParams.get('id')) return verificationJson({ error: 'Challenge not found' }, 404);
-      if (!['ready', 'running'].includes(attempt.status) || Date.now() >= attempt.expiresAt) return verificationJson({ error: 'Challenge expired' }, 410);
+      if (!['ready', 'running'].includes(attempt.status) || Date.now() > attemptDeadline(attempt)) return verificationJson({ error: 'Challenge expired' }, 410);
       return new Response(new Uint8Array(attempt.image), { headers: {
         'Content-Type': 'image/png', 'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', Vary: 'Cookie',
@@ -107,7 +114,7 @@ export class SpeedVerification {
       return verificationJson({ error: 'Enter only the words shown in the passage' }, 400);
     }
     if (action === 'finish' && payload.elapsedMs !== undefined &&
-        (typeof payload.elapsedMs !== 'number' || !Number.isFinite(payload.elapsedMs) || payload.elapsedMs <= 0 || payload.elapsedMs > VERIFICATION_DURATION_MS)) {
+        (typeof payload.elapsedMs !== 'number' || !Number.isFinite(payload.elapsedMs) || payload.elapsedMs <= 0)) {
       return verificationJson({ error: 'Invalid typing duration' }, 400);
     }
     const submission = action === 'finish' ? normalizeVerificationText(payload.text as string) : undefined;
@@ -122,12 +129,12 @@ export class SpeedVerification {
         return attempt.submission === submission ? { record, status: 200 }
           : { record, status: 409, error: 'This challenge already has a different submission' };
       }
-      if (now >= attempt.expiresAt) return { record, status: 410, error: 'Challenge expired. Request a new passage.' };
+      if (now > attemptDeadline(attempt)) return { record, status: 410, error: 'Challenge expired. Request a new passage.' };
       if (action === 'start') {
         if (attempt.status === 'ready') {
           attempt.textHash ??= await verificationTextHash(attempt.id, attempt.answer);
           attempt.startedAt = now;
-          attempt.expiresAt = now + VERIFICATION_DURATION_MS;
+          attempt.expiresAt = now + verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm);
           attempt.status = 'running';
         } else if (attempt.status !== 'running') return { record, status: 409, error: 'Challenge already finished' };
       } else if (action === 'cancel') {
@@ -175,7 +182,7 @@ export class SpeedVerification {
     // checks run again in the transaction because requests can overlap here.
     const current = await this.state.storage.get<RecordState>('verification') ?? {};
     const existing = current.attempt;
-    if (existing && ['ready', 'running'].includes(existing.status) && Date.now() < existing.expiresAt) {
+    if (existing && ['ready', 'running'].includes(existing.status) && Date.now() <= attemptDeadline(existing)) {
       const same = existing.date === date && existing.claimedWpm === claimedWpm && existing.corpusHash === corpusHash;
       return same ? verificationJson(publicStatus(current, Date.now()))
         : verificationJson({ error: 'Finish or cancel your current speed check first' }, 409);
@@ -192,7 +199,7 @@ export class SpeedVerification {
       const record = await storage.get<RecordState>('verification') ?? {};
       const now = Date.now();
       const existing = record.attempt;
-      if (existing && ['ready', 'running'].includes(existing.status) && now < existing.expiresAt) {
+      if (existing && ['ready', 'running'].includes(existing.status) && now <= attemptDeadline(existing)) {
         const same = existing.date === date && existing.claimedWpm === claimedWpm && existing.corpusHash === corpusHash;
         return { record, status: same ? 200 : 409, error: same ? undefined : 'Finish or cancel your current speed check first' };
       }

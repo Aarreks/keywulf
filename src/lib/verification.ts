@@ -1,6 +1,5 @@
 // Public protocol only. The passage and challenge image are server-owned.
 export const VERIFICATION_MAX_CLAIM_WPM = 400;
-export const VERIFICATION_DURATION_MS = 60_000;
 export const VERIFICATION_READY_MS = 5 * 60_000;
 export const VERIFICATION_RECEIPT_MS = 30 * 86_400_000;
 
@@ -51,6 +50,12 @@ export function requiredVerificationWpm(claimedWpm: number): number {
   return Math.max(1, Math.ceil(claimedWpm * 0.75));
 }
 
+/** Five characters count as one word, matching the game's WPM calculation. */
+export function verificationTimeLimitMs(characterCount: number, requiredWpm: number): number {
+  // Whole milliseconds avoid promising time beyond the actual speed threshold.
+  return Math.floor(characterCount * 12_000 / requiredWpm);
+}
+
 export function normalizeVerificationText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -68,7 +73,7 @@ export function scoreVerification(expected: string, typed: string, elapsedMs: nu
   const matches = normalizeVerificationText(expected) === actual;
   const accuracy = Number(matches);
   const measuredWpm = elapsedMs > 0 ? normalizeVerificationText(expected).length * 12_000 / elapsedMs : 0;
-  const reason = elapsedMs <= 0 || elapsedMs > VERIFICATION_DURATION_MS ? 'expired'
+  const reason = elapsedMs <= 0 || elapsedMs > verificationTimeLimitMs(normalizeVerificationText(expected).length, requiredWpm) ? 'expired'
     : !matches ? 'mismatch'
       : measuredWpm < requiredWpm ? 'speed' : 'passed';
   return { passed: reason === 'passed', measuredWpm, accuracy, elapsedMs, reason };

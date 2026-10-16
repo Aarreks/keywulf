@@ -37,7 +37,11 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
 - [SpeedVerification](../worker/speedVerification.ts) stores the answer privately.
   Its JSON uses an explicit allowlist. The owning cookie can view the PNG before
   typing; the first character sends the start request for the non-pausable
-  60-second server timer. A start retry does not restart it. One active passage
+  server timer. Its deadline is `characterCount * 12000 / requiredWpm`
+  milliseconds (five characters per word), rounded down to a whole millisecond.
+  For example, 200 characters at 75 WPM allows 32.0 seconds. The countdown shows
+  tenths and never displays zero before expiry. There is no independent 60-second
+  cap; longer/slower passages can allow more time. A start retry does not restart it. One active passage
   and three new passages per 15 minutes
   are enforced transactionally. Identical finish retries recover the saved
   outcome for 15 minutes; another answer cannot overwrite it.

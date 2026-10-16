@@ -6,7 +6,7 @@ import { SpeedVerification } from './speedVerification';
 import worker, { type Env, type Storage } from './index';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
 import { normalizeNickname, replayScore, type RankedRun } from '../src/lib/leaderboard';
-import { scoreVerification, verificationTextHash, type VerificationStatus } from '../src/lib/verification';
+import { scoreVerification, verificationTextHash, verificationTimeLimitMs, type VerificationStatus } from '../src/lib/verification';
 import sample from '../src/data/sampleChallenge.json';
 
 vi.mock('./verificationImage', () => ({ createVerificationPassage: vi.fn(), renderVerificationImage: vi.fn() }));
@@ -125,6 +125,13 @@ describe('server scoring', () => {
     expect(scoreVerification('some words', '  SOME   words ', 1000, 75).passed).toBe(true);
     expect(scoreVerification('a'.repeat(100), 'a'.repeat(100), 61_000, 75).reason).toBe('expired');
   });
+  it('derives the deadline from passage length and speed, including durations over a minute', () => {
+    expect(verificationTimeLimitMs(100, 75)).toBe(16_000);
+    expect(scoreVerification('a'.repeat(100), 'a'.repeat(100), 16_000, 75).passed).toBe(true);
+    expect(scoreVerification('a'.repeat(100), 'a'.repeat(100), 16_001, 75).reason).toBe('expired');
+    expect(verificationTimeLimitMs(300, 45)).toBe(80_000);
+    expect(scoreVerification('a'.repeat(300), 'a'.repeat(300), 70_000, 45).passed).toBe(true);
+  });
 });
 
 describe('single-use speed verification', () => {
@@ -193,7 +200,7 @@ describe('single-use speed verification', () => {
     expect((await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).status).toBe(429);
     vi.advanceTimersByTime(15 * 60_000);
     const next = await (await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
-    vi.advanceTimersByTime(5 * 60_000);
+    vi.advanceTimersByTime(5 * 60_000 + 1);
     expect((await post(verification(), 'start', { id: next.attempt!.id })).status).toBe(410);
     await verification().alarm();
     expect((await (await status(verification())).json() as VerificationStatus).attempt).toBeNull();
@@ -202,10 +209,38 @@ describe('single-use speed verification', () => {
     const created = await (await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
     const id = created.attempt!.id;
     expect((await post(verification(), 'finish', { id, text: answer, elapsedMs: 1 })).status).toBe(409);
-    await post(verification(), 'start', { id }); vi.advanceTimersByTime(59_000);
-    const settled = await (await post(verification(), 'finish', { id, text: answer, elapsedMs: 1, wpm: 200 })).json() as VerificationStatus;
-    expect(settled.attempt!.result!.passed).toBe(false);
-    expect(settled.receipt).toBeNull();
+    await post(verification(), 'start', { id }); vi.advanceTimersByTime(verificationTimeLimitMs(answer.length, 113) + 1);
+    expect((await post(verification(), 'finish', { id, text: answer, elapsedMs: 1, wpm: 200 })).status).toBe(410);
+    expect((await (await status(verification())).json() as VerificationStatus).receipt).toBeNull();
+  });
+  it('accepts the last valid millisecond and expires older fixed-duration records at the speed deadline', async () => {
+    const ready = await (await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    await post(verification(), 'start', { id: ready.attempt!.id });
+    const limit = verificationTimeLimitMs(answer.length, 113);
+    vi.advanceTimersByTime(limit);
+    expect((await post(verification(), 'finish', { id: ready.attempt!.id, text: answer })).status).toBe(200);
+    const other = verification('bob');
+    const second = await (await post(other, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    await post(other, 'start', { id: second.attempt!.id });
+    const storage = verificationStores.get('bob')!;
+    const saved = await storage.get<{ attempt: { startedAt: number; expiresAt: number } }>('verification');
+    saved!.attempt.expiresAt = saved!.attempt.startedAt + 60_000;
+    await storage.put('verification', saved);
+    const current = await (await status(other)).json() as VerificationStatus;
+    expect(current.attempt!.expiresAt).toBe(current.attempt!.startedAt! + limit);
+    vi.advanceTimersByTime(limit + 1);
+    expect((await post(other, 'finish', { id: second.attempt!.id, text: answer })).status).toBe(410);
+    expect((await other.fetch(new Request(`https://object/image?id=${second.attempt!.id}`))).status).toBe(410);
+    await other.alarm();
+    expect((await (await status(other)).json() as VerificationStatus).attempt).toBeNull();
+  });
+  it('permits a slow score to use its full threshold-derived time beyond sixty seconds', async () => {
+    const ready = await (await post(verification(), 'issue', { date, corpusHash: hash, claimedWpm: 50 })).json() as VerificationStatus;
+    const running = await (await post(verification(), 'start', { id: ready.attempt!.id })).json() as VerificationStatus;
+    expect(running.attempt!.expiresAt - running.attempt!.startedAt!).toBe(verificationTimeLimitMs(answer.length, 38));
+    vi.advanceTimersByTime(70_000);
+    const passed = await (await post(verification(), 'finish', { id: ready.attempt!.id, text: answer, elapsedMs: 70_000 })).json() as VerificationStatus;
+    expect(passed.attempt!.result!.passed).toBe(true);
   });
 });
 
