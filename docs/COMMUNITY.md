@@ -56,6 +56,19 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   first-character request's latency can count. A lost response offers an exact
   retry, not a replacement answer. There is no normal submit button. Claims above 400 WPM are
   rejected. The server derives the claim from the private daily result.
+- Optional typing feedback calls `/api/verification/check` at most once per
+  800 ms, with only one request in flight. The object enforces the same cooldown
+  durably and admits checks only while the owning browser's timer is running.
+  It returns the first wrong position, not expected letters or a whole-answer
+  correctness mask. Later text remains ungraded until that error is corrected,
+  avoiding cascading errors after a missing/extra character. Feedback can still
+  serve as a bounded guessing oracle; it does not make the check OCR-proof.
+  Replies for edited prefixes are ignored; replies remain useful if the user
+  only appended text. A mirror uses the existing character-error style while
+  the native textarea owns selection, input and scrolling. Whitespace positions
+  map back to the original input. Invalid punctuation is marked locally. Network
+  errors in this optional feedback never block exact-match submission. These
+  checks add Worker/DO requests and bounded storage writes, not model calls.
 - Publishing a score reads a receipt through a private binding and checks
   its date, corpus hash, expiry and speed. A browser cannot supply its own badge.
   The top 50 use full-precision WPM, then accuracy, completion time and stable ID.

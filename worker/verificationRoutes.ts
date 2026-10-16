@@ -45,7 +45,7 @@ export async function handleCommunity(request: Request, env: Env): Promise<Respo
   const action = ({ '/api/leaderboard': 'top', '/api/leaderboard/me': 'me', '/api/runs/start': 'run-start',
     '/api/runs/finish': 'run-finish', '/api/runs/publish': 'run-publish', '/api/verification': 'status',
     '/api/verification/issue': 'issue', '/api/verification/start': 'start',
-    '/api/verification/finish': 'finish', '/api/verification/cancel': 'cancel', '/api/verification/image': 'image',
+    '/api/verification/finish': 'finish', '/api/verification/cancel': 'cancel', '/api/verification/image': 'image', '/api/verification/check': 'check',
   } as Record<string, string>)[url.pathname];
   if (!action) return verificationJson({ error: 'Not found' }, 404);
   if (request.method !== (['top', 'me', 'status', 'image'].includes(action) ? 'GET' : 'POST')) return verificationJson({ error: 'Method not allowed' }, 405);

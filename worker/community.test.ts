@@ -6,7 +6,7 @@ import { SpeedVerification } from './speedVerification';
 import worker, { type Env, type Storage } from './index';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
 import { normalizeNickname, replayScore, type RankedRun } from '../src/lib/leaderboard';
-import { scoreVerification, verificationTextHash, verificationTimeLimitMs, type VerificationStatus } from '../src/lib/verification';
+import { scoreVerification, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, type VerificationStatus } from '../src/lib/verification';
 import sample from '../src/data/sampleChallenge.json';
 
 vi.mock('./verificationImage', () => ({ createVerificationPassage: vi.fn(), renderVerificationImage: vi.fn() }));
@@ -101,6 +101,11 @@ beforeEach(() => {
 afterEach(() => { databases.splice(0).forEach(database => database.close()); vi.useRealTimers(); });
 
 describe('server scoring', () => {
+  it('maps feedback positions through leading/repeated whitespace without shifting the highlight', () => {
+    expect(verificationCharacterOffset('  SOME   wurds  ', 6)).toBe(10);
+    expect(verificationCharacterOffset('river\n\nwest', 5)).toBe(5);
+    expect(verificationCharacterOffset('river\n\nwest', 6)).toBe(7);
+  });
   it('normalizes nicknames and rejects markup, controls, oversized and misleading input types', () => {
     expect(normalizeNickname('  Zoë   Fox_2  ')).toBe('Zoë Fox_2');
     expect(normalizeNickname(' ')).toBe('');
@@ -135,6 +140,25 @@ describe('server scoring', () => {
 });
 
 describe('single-use speed verification', () => {
+  it('returns only the first wrong position after starting, with a durable feedback cooldown', async () => {
+    const actor = verification();
+    const ready = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    const id = ready.attempt!.id;
+    expect((await post(actor, 'check', { id, text: 'rivar' })).status).toBe(409);
+    expect((await post(verification('bob'), 'check', { id, text: 'rivar' })).status).toBe(404);
+    await post(actor, 'start', { id });
+    const first = await (await post(actor, 'check', { id, text: '  RIVAR west' })).json();
+    expect(first).toEqual({ id, mismatchIndex: 3 });
+    expect(JSON.stringify(first)).not.toContain('river');
+    verifications.delete('alice');
+    expect((await post(verification(), 'check', { id, text: 'river' })).status).toBe(429);
+    vi.advanceTimersByTime(800);
+    expect(await (await post(verification(), 'check', { id, text: 'river' })).json()).toEqual({ id, mismatchIndex: null });
+    const current = await (await status(verification())).json() as VerificationStatus;
+    expect(current.attempt!.status).toBe('running'); expect(current.receipt).toBeNull();
+    vi.advanceTimersByTime(verificationTimeLimitMs(answer.length, 113));
+    expect((await post(verification(), 'check', { id, text: 'rivar' })).status).toBe(410);
+  });
   it('keeps the answer private, exposes only a salted hash and lets players see the image before typing', async () => {
     const actor = verification();
     const created = await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 });
@@ -326,6 +350,8 @@ describe('public community boundary', () => {
     expect(cookie).toContain('HttpOnly'); expect(cookie).toContain('SameSite=Strict'); expect(cookie).toContain('Secure');
     expect((await api('verification/issue', { date, claimedWpm: 400 }, cookie)).status).toBe(409);
     expect((await api('verification/start', { id: 'fake' })).status).toBe(401);
+    expect((await api('verification/check', { id: 'fake', text: 'rivar' })).status).toBe(401);
+    expect((await api('verification/check', { id: 'fake', text: 'rivar' }, cookie, 'https://attacker.example')).status).toBe(403);
   });
   it('fails closed on abuse, large bodies, wrong dates and feature disable without altering the game', async () => {
     expect((await api('runs/start', { date, padding: 'x'.repeat(70_000) })).status).toBe(400);

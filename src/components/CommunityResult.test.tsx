@@ -107,6 +107,57 @@ it('ignores a matching hash that finishes after the player changes the text', as
   expect(communityRequest).not.toHaveBeenCalled();
 });
 
+it('highlights the first wrong character, keeps appended feedback useful and clears it immediately on correction', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockResolvedValue({ id: 'check', mismatchIndex: 6 });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some wurd');
+  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  expect(container.querySelector('textarea')).toHaveAttribute('aria-invalid', 'true');
+  expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/check');
+  await enterAnswer('some wurds');
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  await enterAnswer('some word');
+  expect(container.querySelector('.verification-mirror .incorrect')).toBeNull();
+  expect(container.querySelector('textarea')).toHaveAttribute('aria-invalid', 'false');
+});
+
+it('ignores delayed feedback for edited text and highlights invalid characters without a server query', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, characterCount: 200, expiresAt: 30_000 } });
+  let reply!: (value: { id: string; mismatchIndex: number }) => void;
+  vi.mocked(communityRequest).mockReturnValue(new Promise(resolve => { reply = resolve; }));
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some wurd');
+  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  await enterAnswer('some word');
+  await act(async () => reply({ id: 'check', mismatchIndex: 6 }));
+  expect(container.querySelector('.verification-mirror .incorrect')).toBeNull();
+  await enterAnswer('some word!');
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('!');
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+});
+
+it('keeps typing and exact-match submission working if optional feedback is unavailable', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockRejectedValueOnce(new Error('Feedback unavailable'))
+    .mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some word');
+  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('textarea')!.disabled).toBe(false);
+  await enterAnswer('some words');
+  expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/check', 'verification/finish']);
+  expect(container.textContent).toContain('Publish checked score');
+});
+
 it('ignores a stale initial read arriving after a successful score submission', async () => {
   let finishRead!: (value: { run: RankedRun }) => void;
   vi.mocked(getRankedRun).mockReturnValue(new Promise(resolve => { finishRead = resolve; }));

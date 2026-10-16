@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
-import { normalizeVerificationText, requiredVerificationWpm, verificationTextHash, verificationTimeLimitMs, type VerificationStatus } from '../lib/verification';
+import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
 import { formatWpm } from '../lib/scoring';
 
 interface Props {
@@ -26,7 +26,11 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const [imageRetry, setImageRetry] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [feedback, setFeedback] = useState<(VerificationFeedback & { text: string }) | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const mirror = useRef<HTMLDivElement>(null);
+  const latestAnswer = useRef(answer);
+  latestAnswer.current = answer;
   const controller = useRef<AbortController>();
   const inFlight = useRef(false);
   const revision = useRef(0);
@@ -52,6 +56,22 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   }, [date, finish]);
 
   useEffect(() => { if (imageReady && ['ready', 'running'].includes(attempt?.status || '')) input.current?.focus(); }, [imageReady, attempt?.status]);
+
+  const syncMirror = useCallback(() => {
+    if (!input.current || !mirror.current) return;
+    // A native textarea keeps selection, IME and mobile keyboard behavior. Its
+    // mirror must share the content width (including scrollbar changes) and scroll.
+    if (input.current.clientWidth) mirror.current.style.width = `${input.current.clientWidth + 2}px`;
+    mirror.current.scrollTop = input.current.scrollTop;
+    mirror.current.scrollLeft = input.current.scrollLeft;
+  }, []);
+  useLayoutEffect(syncMirror, [answer, feedback, syncMirror]);
+  useEffect(() => {
+    if (!input.current || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(syncMirror);
+    observer.observe(input.current);
+    return () => observer.disconnect();
+  }, [attempt?.status, imageReady, syncMirror]);
 
   useEffect(() => {
     if (!attempt || !verification || (attempt.status !== 'running' && !starting)) return;
@@ -111,6 +131,31 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     return () => { stale = true; };
   }, [answer, attempt, imageReady, busy, perform, submit]);
 
+  useEffect(() => {
+    if (!attempt || attempt.status !== 'running' || !imageReady) return;
+    const id = attempt.id;
+    let stopped = false;
+    let checking = false;
+    let lastChecked = '';
+    let request: AbortController | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const check = async () => {
+      const text = latestAnswer.current;
+      if (checking || stopped || submission.current !== null || performance.now() > deadline.current ||
+          !normalizeVerificationText(text) || /[^a-zA-Z\s]/.test(text) || text === lastChecked) return;
+      checking = true;
+      request = new AbortController();
+      timeout = setTimeout(() => request?.abort(), 1500);
+      try {
+        const result = await communityRequest<VerificationFeedback>('verification/check', { id, text }, request.signal);
+        if (!stopped && result.id === id) { setFeedback({ ...result, text }); lastChecked = text; }
+      } catch { /* Feedback is best effort; completion checking remains independent. */ }
+      finally { clearTimeout(timeout); checking = false; }
+    };
+    const timer = setInterval(() => void check(), VERIFICATION_FEEDBACK_INTERVAL_MS);
+    return () => { stopped = true; clearInterval(timer); clearTimeout(timeout); request?.abort(); };
+  }, [attempt, imageReady]);
+
   function changeAnswer(text: string) {
     if (submission.current !== null) return;
     blockedText.current = null;
@@ -137,6 +182,12 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const hasReceipt = run && receipt && receipt.date === run.date && receipt.corpusHash === run.corpusHash &&
     receipt.validUntil > verification.serverNow && receipt.requiredWpm >= requiredVerificationWpm(run.wpm!);
   const activeAttempt = attempt && ['ready', 'running'].includes(attempt.status);
+  const checkedOffset = feedback?.id === attempt?.id && feedback?.mismatchIndex !== null && feedback &&
+    normalizeVerificationText(answer).startsWith(normalizeVerificationText(feedback.text))
+    ? verificationCharacterOffset(answer, feedback.mismatchIndex) : -1;
+  const invalidOffset = answer.search(/[^a-zA-Z\s]/);
+  const wrongOffset = checkedOffset < 0 ? invalidOffset : invalidOffset < 0 ? checkedOffset : Math.min(checkedOffset, invalidOffset);
+  const wrongCharacter = wrongOffset < 0 ? '' : Array.from(answer.slice(wrongOffset))[0] || '';
   async function publish(signal: AbortSignal) {
     const result = await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: run!.id, nickname }, signal);
     if (!signal.aborted) {
@@ -195,10 +246,17 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
         {!imageReady && <button className="btn btn--ghost" onClick={() => setImageRetry(value => value + 1)}>Reload image</button>}
         <div>
           <label htmlFor="speed-answer">Type the passage</label>
-          <textarea ref={input} className="verification-input" id="speed-answer" value={answer} disabled={(busy && submission.current !== null) || !imageReady || ((attempt.status === 'running' || starting) && remainingMs === 0)} maxLength={1000}
-            autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
-            onPaste={event => event.preventDefault()} onDrop={event => event.preventDefault()}
-            onChange={event => changeAnswer(event.target.value)} />
+          <div className="verification-editor">
+            <div ref={mirror} className="verification-input verification-mirror" aria-hidden="true">
+              {wrongOffset < 0 ? answer : <>{answer.slice(0, wrongOffset)}<span className={`ch incorrect${/\s/.test(wrongCharacter) ? ' sp' : ''}`}>{wrongCharacter}</span>{answer.slice(wrongOffset + wrongCharacter.length)}</>}{'\u200b'}
+            </div>
+            <textarea ref={input} className="verification-input" id="speed-answer" value={answer} disabled={(busy && submission.current !== null) || !imageReady || ((attempt.status === 'running' || starting) && remainingMs === 0)} maxLength={1000}
+              autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} aria-invalid={wrongOffset >= 0}
+              aria-describedby="verification-feedback" onScroll={syncMirror}
+              onPaste={event => event.preventDefault()} onDrop={event => event.preventDefault()}
+              onChange={event => changeAnswer(event.target.value)} />
+          </div>
+          <p className="sr-only" id="verification-feedback" role="status">{wrongOffset >= 0 ? `Check character ${wrongOffset + 1}.` : ''}</p>
           {busy && submission.current !== null && <p role="status">Checking speed…</p>}
           {!busy && submission.current !== null && error && <button className="btn" onClick={() => void perform(signal => submit(attempt.id, submission.current!, signal))}>Retry submission</button>}
         </div>

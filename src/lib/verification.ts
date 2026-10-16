@@ -2,6 +2,19 @@
 export const VERIFICATION_MAX_CLAIM_WPM = 400;
 export const VERIFICATION_READY_MS = 5 * 60_000;
 export const VERIFICATION_RECEIPT_MS = 30 * 86_400_000;
+export const VERIFICATION_FEEDBACK_INTERVAL_MS = 800;
+
+export interface VerificationFeedback { id: string; mismatchIndex: number | null }
+
+/** Map a normalized comparison position back to the actual text being edited. */
+export function verificationCharacterOffset(text: string, normalizedIndex: number): number {
+  const offsets: number[] = [];
+  for (const match of text.matchAll(/\S|\s+/g)) {
+    if (/\s/.test(match[0]) && (!offsets.length || match.index! + match[0].length === text.length)) continue;
+    offsets.push(match.index!);
+  }
+  return offsets[normalizedIndex] ?? text.length;
+}
 
 export interface VerificationResult {
   passed: boolean;

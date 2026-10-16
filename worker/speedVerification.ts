@@ -2,7 +2,7 @@ import type { Storage } from './index';
 import {
   normalizeVerificationText, requiredVerificationWpm, scoreVerification, verificationTextHash, verificationTimeLimitMs,
   VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
-  VERIFICATION_RECEIPT_MS,
+  VERIFICATION_RECEIPT_MS, VERIFICATION_FEEDBACK_INTERVAL_MS,
   type VerificationAttempt, type VerificationReceipt, type VerificationStatus,
 } from '../src/lib/verification';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
@@ -11,6 +11,7 @@ interface Attempt extends VerificationAttempt {
   answer: string;
   image: Uint8Array;
   submission?: string;
+  checkedAt?: number;
 }
 interface RecordState {
   attempt?: Attempt;
@@ -108,9 +109,9 @@ export class SpeedVerification {
     } catch { return verificationJson({ error: 'Invalid request' }, 400); }
 
     if (action === 'issue') return this.issue(payload);
-    if (!['start', 'finish', 'cancel'].includes(action)) return verificationJson({ error: 'Not found' }, 404);
+    if (!['start', 'finish', 'cancel', 'check'].includes(action)) return verificationJson({ error: 'Not found' }, 404);
     if (typeof payload.id !== 'string') return verificationJson({ error: 'Challenge ID required' }, 400);
-    if (action === 'finish' && (typeof payload.text !== 'string' || payload.text.length > 1_000 || !/^[a-zA-Z\s]*$/.test(payload.text))) {
+    if (['finish', 'check'].includes(action) && (typeof payload.text !== 'string' || payload.text.length > 1_000 || !/^[a-zA-Z\s]*$/.test(payload.text))) {
       return verificationJson({ error: 'Enter only the words shown in the passage' }, 400);
     }
     if (action === 'finish' && payload.elapsedMs !== undefined &&
@@ -130,6 +131,20 @@ export class SpeedVerification {
           : { record, status: 409, error: 'This challenge already has a different submission' };
       }
       if (now > attemptDeadline(attempt)) return { record, status: 410, error: 'Challenge expired. Request a new passage.' };
+      if (action === 'check') {
+        if (attempt.status !== 'running') return { record, status: 409, error: 'Start typing first' };
+        if (attempt.checkedAt !== undefined && now - attempt.checkedAt < VERIFICATION_FEEDBACK_INTERVAL_MS) {
+          return { record, status: 429, error: 'Wait before checking again' };
+        }
+        const text = normalizeVerificationText(payload.text as string);
+        let index = 0;
+        while (index < text.length && text[index] === attempt.answer[index]) index++;
+        attempt.checkedAt = now;
+        await storage.put('verification', record);
+        // Return only the first wrong position, never expected letters or a
+        // per-position mask that would allow parallel guesses of the whole text.
+        return { record, status: 200, feedback: { id: attempt.id, mismatchIndex: index < text.length ? index : null } };
+      }
       if (action === 'start') {
         if (attempt.status === 'ready') {
           attempt.textHash ??= await verificationTextHash(attempt.id, attempt.answer);
@@ -168,6 +183,7 @@ export class SpeedVerification {
       return { record, status: 200 };
     });
     await this.scheduleCleanup(outcome.record);
+    if ('feedback' in outcome && outcome.feedback) return verificationJson(outcome.feedback);
     return outcome.error ? verificationJson({ error: outcome.error }, outcome.status)
       : verificationJson(publicStatus(outcome.record, Date.now()), outcome.status);
   }
