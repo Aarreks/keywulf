@@ -5,10 +5,14 @@ import { CommunityResult } from './CommunityResult';
 import { communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
 import type { VerificationStatus } from '../lib/verification';
+import { normalizeVerificationText, verificationTextHash } from '../lib/verification';
 
 vi.mock('../lib/communityClient', async original => ({
   ...await original<typeof import('../lib/communityClient')>(),
   communityRequest: vi.fn(), getRankedRun: vi.fn(), getVerification: vi.fn(),
+}));
+vi.mock('../lib/verification', async original => ({
+  ...await original<typeof import('../lib/verification')>(), verificationTextHash: vi.fn(),
 }));
 let root: Root;
 let container: HTMLDivElement;
@@ -16,11 +20,12 @@ const run: RankedRun = { id: 'run', name: 'Typist TEST', date: '2026-10-06', cor
   status: 'running', startedAt: 0, wpm: null, accuracy: null, verified: false };
 const empty: VerificationStatus = { attempt: null, receipt: null, serverNow: 1000, retryAt: null };
 const running: VerificationStatus = { ...empty, attempt: { id: 'check', date: run.date, corpusHash: 'hash', claimedWpm: 150,
-  requiredWpm: 113, characterCount: 200, imageHeight: 240, status: 'running', startedAt: 1000, expiresAt: 61_000, result: null } };
+  requiredWpm: 113, characterCount: 10, textHash: 'check:some words', imageHeight: 240, status: 'running', startedAt: 1000, expiresAt: 61_000, result: null } };
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.mocked(communityRequest).mockReset();
+  vi.mocked(verificationTextHash).mockReset().mockImplementation(async (id, text) => `${id}:${normalizeVerificationText(text)}`);
   vi.mocked(getRankedRun).mockResolvedValue({ run }); vi.mocked(getVerification).mockResolvedValue(empty);
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
@@ -37,8 +42,68 @@ it('lets a pending fast score request verification without changing local game s
   vi.mocked(communityRequest).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready' } });
   await render(); await click('Get verification passage');
   expect(container.textContent).toContain('113 WPM');
-  expect(container.querySelector('img')).toBeNull();
+  expect(container.querySelector('img')).not.toBeNull();
+  expect(container.textContent).toContain('Starts on your first character');
   expect(localStorage.getItem('keywulf')).toBe('unchanged');
+});
+
+async function enterAnswer(text: string) {
+  await act(async () => {
+    const input = container.querySelector('textarea')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, text);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+it('focuses before typing, starts on the first character and keeps typing enabled during the start request', async () => {
+  const ready = { ...running, attempt: { ...running.attempt!, status: 'ready' as const, startedAt: null, expiresAt: 300_000 } };
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(ready);
+  let acknowledge!: (value: VerificationStatus) => void;
+  vi.mocked(communityRequest).mockReturnValueOnce(new Promise(resolve => { acknowledge = resolve; }))
+    .mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  const input = container.querySelector('textarea')!;
+  expect(input).toHaveFocus();
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect(communityRequest).not.toHaveBeenCalled();
+  expect(container.textContent).toContain('Starts on your first character');
+  expect(container.textContent).not.toContain('Check speed');
+  await enterAnswer('s');
+  expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/start']);
+  expect(input.disabled).toBe(false); expect(input).toHaveFocus();
+  await enterAnswer('some words');
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  await act(async () => acknowledge({ ...running, serverNow: 11_000, attempt: { ...running.attempt!, startedAt: 11_000, expiresAt: 71_000 } }));
+  expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/start', 'verification/finish']);
+});
+
+it('automatically submits a full exact match once, but not a same-length typo', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some wurds');
+  expect(communityRequest).not.toHaveBeenCalled();
+  await enterAnswer('SOME   words ');
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/finish');
+  expect(container.textContent).toContain('Publish checked score');
+});
+
+it('ignores a matching hash that finishes after the player changes the text', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  let finishHash!: (hash: string) => void;
+  vi.mocked(verificationTextHash).mockReturnValueOnce(new Promise(resolve => { finishHash = resolve; }));
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some words');
+  await enterAnswer('some wordsx');
+  await act(async () => finishHash('check:some words'));
+  expect(communityRequest).not.toHaveBeenCalled();
 });
 
 it('ignores a stale initial read arriving after a successful score submission', async () => {
@@ -98,14 +163,9 @@ it('keeps the same answer for retry after an unknown network outcome', async () 
     attempt: { ...running.attempt!, status: 'passed', result: { passed: true, measuredWpm: 120, accuracy: 1, elapsedMs: 20_000, reason: 'passed' } } });
   await render();
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
-  await act(async () => {
-    const input = container.querySelector('textarea')!;
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-    setter.call(input, 'some words'); input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await act(async () => container.querySelector('textarea')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await enterAnswer('some words');
   expect(container.textContent).toContain('Connection lost');
-  await act(async () => container.querySelector('textarea')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await click('Retry submission');
   expect(vi.mocked(communityRequest).mock.calls[0][1]).toEqual(vi.mocked(communityRequest).mock.calls[1][1]);
   expect(container.textContent).toContain('Publish checked score');
 });

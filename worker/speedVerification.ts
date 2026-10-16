@@ -1,6 +1,6 @@
 import type { Storage } from './index';
 import {
-  normalizeVerificationText, requiredVerificationWpm, scoreVerification,
+  normalizeVerificationText, requiredVerificationWpm, scoreVerification, verificationTextHash,
   VERIFICATION_DURATION_MS, VERIFICATION_MAX_CLAIM_WPM, VERIFICATION_READY_MS,
   VERIFICATION_RECEIPT_MS,
   type VerificationAttempt, type VerificationReceipt, type VerificationStatus,
@@ -37,6 +37,7 @@ function publicStatus(record: RecordState, now: number): VerificationStatus {
       id: attempt.id, date: attempt.date, corpusHash: attempt.corpusHash,
       claimedWpm: attempt.claimedWpm, requiredWpm: attempt.requiredWpm,
       characterCount: attempt.characterCount, imageHeight: attempt.imageHeight,
+      textHash: ['ready', 'running'].includes(attempt.status) ? attempt.textHash : undefined,
       status: ['ready', 'running'].includes(attempt.status) && now >= attempt.expiresAt ? 'expired' : attempt.status,
       expiresAt: attempt.expiresAt, startedAt: attempt.startedAt, result: attempt.result,
     } : null,
@@ -75,11 +76,16 @@ export class SpeedVerification {
     const action = url.pathname.slice(1);
     if (request.method === 'GET') {
       const record = await this.state.storage.get<RecordState>('verification') ?? {};
+      // Existing in-flight challenges survive a code deployment. Derive their
+      // commitment on read rather than exposing the answer or forcing a restart.
+      if (record.attempt && ['ready', 'running'].includes(record.attempt.status) && !record.attempt.textHash) {
+        record.attempt.textHash = await verificationTextHash(record.attempt.id, record.attempt.answer);
+      }
       if (action === 'status') return verificationJson(publicStatus(record, Date.now()));
       if (action !== 'image') return verificationJson({ error: 'Not found' }, 404);
       const attempt = record.attempt;
       if (!attempt || attempt.id !== url.searchParams.get('id')) return verificationJson({ error: 'Challenge not found' }, 404);
-      if (attempt.status !== 'running' || Date.now() >= attempt.expiresAt) return verificationJson({ error: 'Challenge is not running' }, 410);
+      if (!['ready', 'running'].includes(attempt.status) || Date.now() >= attempt.expiresAt) return verificationJson({ error: 'Challenge expired' }, 410);
       return new Response(new Uint8Array(attempt.image), { headers: {
         'Content-Type': 'image/png', 'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', Vary: 'Cookie',
@@ -100,6 +106,10 @@ export class SpeedVerification {
     if (action === 'finish' && (typeof payload.text !== 'string' || payload.text.length > 1_000 || !/^[a-zA-Z\s]*$/.test(payload.text))) {
       return verificationJson({ error: 'Enter only the words shown in the passage' }, 400);
     }
+    if (action === 'finish' && payload.elapsedMs !== undefined &&
+        (typeof payload.elapsedMs !== 'number' || !Number.isFinite(payload.elapsedMs) || payload.elapsedMs <= 0 || payload.elapsedMs > VERIFICATION_DURATION_MS)) {
+      return verificationJson({ error: 'Invalid typing duration' }, 400);
+    }
     const submission = action === 'finish' ? normalizeVerificationText(payload.text as string) : undefined;
     const outcome = await this.state.storage.transaction(async storage => {
       const record = await storage.get<RecordState>('verification') ?? {};
@@ -115,6 +125,7 @@ export class SpeedVerification {
       if (now >= attempt.expiresAt) return { record, status: 410, error: 'Challenge expired. Request a new passage.' };
       if (action === 'start') {
         if (attempt.status === 'ready') {
+          attempt.textHash ??= await verificationTextHash(attempt.id, attempt.answer);
           attempt.startedAt = now;
           attempt.expiresAt = now + VERIFICATION_DURATION_MS;
           attempt.status = 'running';
@@ -126,7 +137,11 @@ export class SpeedVerification {
         attempt.image = new Uint8Array();
       } else {
         if (attempt.status !== 'running' || attempt.startedAt === null) return { record, status: 409, error: 'Start the challenge first' };
-        const result = scoreVerification(attempt.answer, submission!, now - attempt.startedAt, attempt.requiredWpm);
+        if (normalizeVerificationText(attempt.answer) !== submission) return { record, status: 400, error: 'Finish the exact passage before submitting' };
+        // Browser time can include the first-character request's latency. It may
+        // lengthen, but never shorten, the duration observed by the server.
+        const duration = Math.max(now - attempt.startedAt, (payload.elapsedMs as number | undefined) ?? 0);
+        const result = scoreVerification(attempt.answer, submission!, duration, attempt.requiredWpm);
         attempt.result = result;
         attempt.status = result.passed ? 'passed' : 'failed';
         attempt.expiresAt = now + ATTEMPT_WINDOW_MS;
@@ -171,6 +186,8 @@ export class SpeedVerification {
     const requiredWpm = requiredVerificationWpm(claimedWpm);
     const answer = createVerificationPassage(requiredWpm);
     const image = await renderVerificationImage(answer);
+    const id = crypto.randomUUID();
+    const textHash = await verificationTextHash(id, answer);
     const outcome = await this.state.storage.transaction(async storage => {
       const record = await storage.get<RecordState>('verification') ?? {};
       const now = Date.now();
@@ -183,7 +200,7 @@ export class SpeedVerification {
       if (record.budget.used >= ATTEMPT_LIMIT) return { record, status: 429, error: 'Three passages per 15 minutes. Please try again later.' };
       record.budget.used++;
       record.attempt = {
-        id: crypto.randomUUID(), date, corpusHash, claimedWpm, requiredWpm, answer, image,
+        id, date, corpusHash, claimedWpm, requiredWpm, answer, image, textHash,
         characterCount: answer.length, imageHeight: new DataView(image.buffer, image.byteOffset).getUint32(20),
         status: 'ready', expiresAt: now + VERIFICATION_READY_MS,
         startedAt: null, result: null,

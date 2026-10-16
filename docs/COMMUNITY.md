@@ -11,8 +11,8 @@ The interface reuses the existing result panels, buttons and score-list styles.
 first keystroke -> POST /api/runs/start -> date's DailyLeaderboard (SQLite)
 finish typing  -> POST /api/runs/finish -> private, immutable first result
                -> SpeedVerification object for this browser
-                  prepare PNG -> start server clock -> reveal image
-                  submit transcription -> receipt -> user posts -> top 50
+                  reveal PNG and focus input -> first character starts clock
+                  exact match autosubmits -> receipt -> user posts -> top 50
 ```
 
 - [handleCommunity](../worker/verificationRoutes.ts) creates an HttpOnly,
@@ -35,16 +35,22 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   private status read recovers a committed result. An unsent finish cannot be
   reconstructed with trusted completion time after the deadline.
 - [SpeedVerification](../worker/speedVerification.ts) stores the answer privately.
-  Its JSON uses an explicit allowlist. The PNG is available only to the owning
-  cookie after starting the non-pausable 60-second server timer. A start retry
-  does not restart it. One active passage and three new passages per 15 minutes
+  Its JSON uses an explicit allowlist. The owning cookie can view the PNG before
+  typing; the first character sends the start request for the non-pausable
+  60-second server timer. A start retry does not restart it. One active passage
+  and three new passages per 15 minutes
   are enforced transactionally. Identical finish retries recover the saved
   outcome for 15 minutes; another answer cannot overwrite it.
 - Every public score must pass the check, at any WPM. The check requires
-  `max(1, ceil(dailyWpm * 0.75))` WPM and at least 95% matching text.
-  [scoreVerification](../src/lib/verification.ts) normalizes case/whitespace and
-  uses edit distance, so one missing letter does not shift every later letter.
-  Net matching characters determine measured speed. Claims above 400 WPM are
+  `max(1, ceil(dailyWpm * 0.75))` WPM after completing the exact text. There is no
+  separate accuracy-percentage requirement: mistakes can be corrected before
+  completion. Case and extra whitespace are normalized. A salted SHA-256
+  commitment lets the browser recognize a complete match without receiving the
+  plaintext or querying the server on each keystroke. It immediately submits
+  once; the server independently checks the text and elapsed time. Browser
+  elapsed time can lengthen, but never shorten, server-observed duration, so the
+  first-character request's latency can count. A lost response offers an exact
+  retry, not a replacement answer. There is no normal submit button. Claims above 400 WPM are
   rejected. The server derives the claim from the private daily result.
 - Publishing a score reads a receipt through a private binding and checks
   its date, corpus hash, expiry and speed. A browser cannot supply its own badge.
@@ -68,12 +74,16 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
 The image renderer is adapted from an existing Workers-compatible Rust/WASM
 CAPTCHA generator; see [provenance and rebuild instructions](../third_party/captcha/NOTICE.md).
 It runs locally in the Worker: no image service or extra model call is needed.
-The frontend receives pixels, never the answer in JSON, DOM text or PNG metadata.
+The frontend receives pixels and a salted whole-passage hash, never the plaintext
+answer in JSON, DOM text or PNG metadata.
 
 A separate timed transcription supports typing ability. It is **not proof that
 the daily run was human**. OCR, scripted replays and assisted input remain possible.
 An anonymous cookie is not an account: clearing it or using another browser can
 create another entry. The server cannot prove the client's actual keystroke times.
+The image is deliberately readable before timing starts; studying/OCR before the
+first-character request is possible. A whole-passage hash also permits offline
+guesses, particularly for short low-speed passages; it is not an OCR defense.
 No prize-bearing/identity-grade anti-cheat is claimed. The visual check is not
 accessible to everyone; opting out preserves the local game and streak.
 There is no cross-device identity, all-time ranking or moderation
@@ -96,7 +106,9 @@ there is no new paid API call per check and no claimed fixed daily cost.
    token. Never seed test scores or fixture briefings into production.
 3. Play locally. Confirm the result is saved privately before posting. Every
    result should require a separate passage, stay absent from the board until
-   passed/published, and retain the original timer after refreshing. Set a nickname
+   passed/published, focus the input after the image loads, start timing on the
+   first character, and submit automatically only when the full text matches.
+   Refreshing must retain the original running timer. Set a nickname
    when posting, edit it afterward, and confirm the score and entry ID stay fixed.
    Cancelling does not change the local result.
 4. Set `KEYWULF_COMMUNITY_ENABLED = "false"` locally and confirm

@@ -3,14 +3,13 @@ export const VERIFICATION_MAX_CLAIM_WPM = 400;
 export const VERIFICATION_DURATION_MS = 60_000;
 export const VERIFICATION_READY_MS = 5 * 60_000;
 export const VERIFICATION_RECEIPT_MS = 30 * 86_400_000;
-export const VERIFICATION_MIN_ACCURACY = 0.95;
 
 export interface VerificationResult {
   passed: boolean;
   measuredWpm: number;
   accuracy: number;
   elapsedMs: number;
-  reason: 'passed' | 'accuracy' | 'speed' | 'expired';
+  reason: 'passed' | 'mismatch' | 'accuracy' | 'speed' | 'expired'; // accuracy is retained for older saved outcomes.
 }
 
 export interface VerificationReceipt {
@@ -33,6 +32,8 @@ export interface VerificationAttempt {
   requiredWpm: number;
   characterCount: number;
   imageHeight: number;
+  /** Salted commitment for local completion detection, never the plaintext. */
+  textHash?: string;
   status: 'ready' | 'running' | 'passed' | 'failed' | 'expired' | 'cancelled';
   expiresAt: number;
   startedAt: number | null;
@@ -54,23 +55,21 @@ export function normalizeVerificationText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-// Edit distance avoids treating one missing letter as a mistake at every later
-// position. Inputs are capped by the server, bounding this O(n*m) calculation.
+export async function verificationTextHash(id: string, text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${id}:${normalizeVerificationText(text)}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+// Corrections are allowed before completion. Only the final, complete text
+// counts; there is no separate percentage-accuracy threshold.
 export function scoreVerification(expected: string, typed: string, elapsedMs: number, requiredWpm: number): VerificationResult {
   const actual = normalizeVerificationText(typed);
-  let row = Array.from({ length: actual.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= expected.length; i++) {
-    const next = [i];
-    for (let j = 1; j <= actual.length; j++) {
-      next[j] = Math.min(next[j - 1] + 1, row[j] + 1, row[j - 1] + Number(expected[i - 1] !== actual[j - 1]));
-    }
-    row = next;
-  }
-  const correct = Math.max(0, expected.length - row[actual.length]);
-  const accuracy = correct / Math.max(expected.length, actual.length, 1);
-  const measuredWpm = elapsedMs > 0 ? correct * 12_000 / elapsedMs : 0;
+  const matches = normalizeVerificationText(expected) === actual;
+  const accuracy = Number(matches);
+  const measuredWpm = elapsedMs > 0 ? normalizeVerificationText(expected).length * 12_000 / elapsedMs : 0;
   const reason = elapsedMs <= 0 || elapsedMs > VERIFICATION_DURATION_MS ? 'expired'
-    : accuracy < VERIFICATION_MIN_ACCURACY ? 'accuracy'
+    : !matches ? 'mismatch'
       : measuredWpm < requiredWpm ? 'speed' : 'passed';
   return { passed: reason === 'passed', measuredWpm, accuracy, elapsedMs, reason };
 }

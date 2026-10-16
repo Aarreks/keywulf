@@ -6,7 +6,7 @@ import { SpeedVerification } from './speedVerification';
 import worker, { type Env, type Storage } from './index';
 import { createVerificationPassage, renderVerificationImage } from './verificationImage';
 import { normalizeNickname, replayScore, type RankedRun } from '../src/lib/leaderboard';
-import { scoreVerification, type VerificationStatus } from '../src/lib/verification';
+import { scoreVerification, verificationTextHash, type VerificationStatus } from '../src/lib/verification';
 import sample from '../src/data/sampleChallenge.json';
 
 vi.mock('./verificationImage', () => ({ createVerificationPassage: vi.fn(), renderVerificationImage: vi.fn() }));
@@ -118,27 +118,55 @@ describe('server scoring', () => {
     expect(() => replayScore('abc', 'abc', NaN)).toThrow();
     expect(() => replayScore('abc', 'abc', 0)).toThrow();
   });
-  it('tolerates a small omission in verification rather than shifting every letter', () => {
+  it('requires the complete matching text, with no separate accuracy percentage', () => {
     const result = scoreVerification('a'.repeat(100), 'a'.repeat(99), 10_000, 75);
-    expect(result.passed).toBe(true); expect(result.accuracy).toBe(0.99);
-    expect(scoreVerification('a'.repeat(100), 'x'.repeat(100), 10_000, 75).reason).toBe('accuracy');
+    expect(result.passed).toBe(false); expect(result.reason).toBe('mismatch');
+    expect(scoreVerification('a'.repeat(100), 'x'.repeat(100), 10_000, 75).reason).toBe('mismatch');
+    expect(scoreVerification('some words', '  SOME   words ', 1000, 75).passed).toBe(true);
     expect(scoreVerification('a'.repeat(100), 'a'.repeat(100), 61_000, 75).reason).toBe('expired');
   });
 });
 
 describe('single-use speed verification', () => {
-  it('keeps the answer private and does not reveal an image before timing starts', async () => {
+  it('keeps the answer private, exposes only a salted hash and lets players see the image before typing', async () => {
     const actor = verification();
     const created = await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 });
     const view = await created.json() as VerificationStatus;
     expect(JSON.stringify(view)).not.toContain(answer);
     expect(JSON.stringify(view)).not.toContain('submission');
-    expect((await actor.fetch(new Request(`https://object/image?id=${view.attempt!.id}`))).status).toBe(410);
+    expect(view.attempt!.textHash).toBe(await verificationTextHash(view.attempt!.id, answer));
+    expect(view.attempt!.textHash).not.toBe(await verificationTextHash('another-check', answer));
+    expect((await actor.fetch(new Request(`https://object/image?id=${view.attempt!.id}`))).status).toBe(200);
+    vi.advanceTimersByTime(30_000);
+    expect((await (await status(actor)).json() as VerificationStatus).attempt!.startedAt).toBeNull();
     const running = await (await post(actor, 'start', { id: view.attempt!.id })).json() as VerificationStatus;
     vi.advanceTimersByTime(2000);
     const retry = await (await post(actor, 'start', { id: view.attempt!.id })).json() as VerificationStatus;
     expect(retry.attempt!.startedAt).toBe(running.attempt!.startedAt);
     expect((await actor.fetch(new Request(`https://object/image?id=${view.attempt!.id}`))).headers.get('Content-Type')).toBe('image/png');
+  });
+  it('allows correcting an incomplete submission, but never lets browser timing shorten server time', async () => {
+    const actor = verification();
+    const ready = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    const id = ready.attempt!.id;
+    await post(actor, 'start', { id }); vi.advanceTimersByTime(10_000);
+    expect((await post(actor, 'finish', { id, text: answer.slice(1), elapsedMs: 1 })).status).toBe(400);
+    expect((await (await status(actor)).json() as VerificationStatus).attempt!.status).toBe('running');
+    expect((await post(actor, 'finish', { id, text: answer, elapsedMs: -1 })).status).toBe(400);
+    const passed = await (await post(actor, 'finish', { id, text: answer, elapsedMs: 20_000 })).json() as VerificationStatus;
+    expect(passed.attempt!.result!.elapsedMs).toBe(20_000);
+    expect(passed.receipt).not.toBeNull();
+  });
+  it('derives a commitment for challenges created by the previous deployment', async () => {
+    const actor = verification();
+    const ready = await (await post(actor, 'issue', { date, corpusHash: hash, claimedWpm: 150 })).json() as VerificationStatus;
+    const storage = verificationStores.get('alice')!;
+    const saved = await storage.get<{ attempt: { textHash?: string } }>('verification');
+    delete saved!.attempt.textHash;
+    await storage.put('verification', saved);
+    const recovered = await (await status(actor)).json() as VerificationStatus;
+    expect(recovered.attempt!.textHash).toBe(ready.attempt!.textHash);
+    expect(JSON.stringify(recovered)).not.toContain(answer);
   });
   it('settles concurrent identical finishes once, survives eviction and rejects different replays', async () => {
     const actor = verification();
