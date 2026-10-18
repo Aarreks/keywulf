@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
-import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS, VERIFICATION_PASSAGE_ALLOWANCE, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
+import { normalizeVerificationText, requiredVerificationWpm, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, VERIFICATION_FEEDBACK_INTERVAL_MS, VERIFICATION_FEEDBACK_COOLDOWN_MS, type VerificationFeedback, type VerificationStatus } from '../lib/verification';
 import { formatWpm } from '../lib/scoring';
+import { LeaderboardView } from './LeaderboardView';
+import { NicknameDialog } from './NicknameDialog';
 
 interface Props {
   date: string;
@@ -22,6 +24,9 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const [nickname, setNickname] = useState(() => {
     try { return localStorage.getItem('keywulf.nickname') || ''; } catch { return ''; }
   });
+  const [nicknameOpen, setNicknameOpen] = useState(false);
+  const promptedPassage = useRef<string>();
+  const closeNickname = useCallback(() => setNicknameOpen(false), []);
   const [imageReady, setImageReady] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
@@ -46,7 +51,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const latestAttempt = useRef(attempt);
   latestAttempt.current = attempt;
 
-  const expireAttempt = useCallback((id: string, message = 'This passage expired. Request a new passage.') => {
+  const expireAttempt = useCallback((id: string) => {
     const current = latestAttempt.current;
     // A late rejection for an old passage must not retire its replacement or
     // overwrite a successful completion of the same passage.
@@ -56,7 +61,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     submittedElapsed.current = undefined;
     setStarting(false); setRemainingMs(0);
     setVerification(status => status?.attempt?.id === id ? { ...status, attempt: { ...status.attempt, status: 'expired' } } : status);
-    setError(message);
+    setError('Passage expired.');
   }, []);
 
   useEffect(() => {
@@ -129,7 +134,8 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     catch (err) {
       if (!active.signal.aborted) {
         if (verificationId && err instanceof CommunityError && [404, 410].includes(err.status)) {
-          expireAttempt(verificationId, err.message);
+          expireAttempt(verificationId);
+          return;
         }
         if (err instanceof CommunityError && err.status === 400 && submission.current !== null) {
           blockedText.current = submission.current;
@@ -213,7 +219,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
         }
       } catch (err) {
         if (!stopped && err instanceof CommunityError && [404, 410].includes(err.status)) {
-          expireAttempt(id, err.message);
+          expireAttempt(id);
           return;
         }
         // Feedback is optional. Back off instead of hammering a slow service or
@@ -258,6 +264,12 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
   const hasReceipt = run && receipt && receipt.date === run.date && receipt.corpusHash === run.corpusHash &&
     receipt.validUntil > verification.serverNow && receipt.requiredWpm >= requiredVerificationWpm(run.wpm!);
   const activeAttempt = attempt && ['ready', 'running'].includes(attempt.status);
+  const passedId = hasReceipt ? receipt!.id : attempt?.status === 'passed' && attempt.date === run?.date && attempt.corpusHash === run.corpusHash ? attempt.id : undefined;
+  useEffect(() => {
+    if (run?.status === 'pending' && passedId && promptedPassage.current !== passedId) {
+      promptedPassage.current = passedId; setNicknameOpen(true);
+    }
+  }, [passedId, run?.status]);
   const readyMs = readyRemaining && readyRemaining.id === attempt?.id ? readyRemaining.ms : Math.max(0, (attempt?.expiresAt ?? 0) - (verification?.serverNow ?? 0));
   const timeToStart = (Math.ceil(readyMs / 100) / 10).toFixed(1);
   const checkedOffset = feedback?.id === attempt?.id && feedback?.mismatchIndex !== null && feedback &&
@@ -265,32 +277,26 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     ? verificationCharacterOffset(answer, feedback.mismatchIndex) : -1;
   const invalidOffset = answer.search(/[^a-zA-Z\s]/);
   const wrongOffset = checkedOffset < 0 ? invalidOffset : invalidOffset < 0 ? checkedOffset : Math.min(checkedOffset, invalidOffset);
-  const wrongCharacter = wrongOffset < 0 ? '' : Array.from(answer.slice(wrongOffset))[0] || '';
-  async function publish(signal: AbortSignal) {
-    const result = await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: run!.id, nickname }, signal);
+  async function publish(chosenName: string, signal: AbortSignal) {
+    const result = await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: run!.id, nickname: chosenName }, signal);
     if (!signal.aborted) {
+      if (result.run?.id !== run!.id || result.run.status !== 'published' || !result.run.verified) throw new Error('Posting was not confirmed. Try again.');
       setRun(result.run); setNickname(result.run.name);
-      try { localStorage.setItem('keywulf.nickname', nickname.trim() ? result.run.name : ''); } catch { /* Posting already succeeded. */ }
+      try { localStorage.setItem('keywulf.nickname', result.run.name); } catch { /* Posting already succeeded. */ }
+      setNicknameOpen(false);
+      onLeaderboard();
     }
   }
 
   return <section className="panel result" aria-labelledby="community-result-title">
-    <h2 className="result__label" id="community-result-title">Daily leaderboard</h2>
+    <h2 className="result__label" id="community-result-title">Global leaderboard</h2>
+    <LeaderboardView date={date} limit={5} onOpen={onLeaderboard} />
     {run?.status === 'published' ? <p role="status">Posted as <strong>{run.name}</strong> · {formatWpm(run.wpm!)} WPM{run.verified ? ' · Speed checked' : ''}.</p>
-      : run?.status === 'pending' ? <p>Your {formatWpm(run.wpm!)} WPM score is saved privately. Pass the speed check to publish it.</p>
-        : <p>Join with your first official run. Ranking uses continuous server time; pauses can make a run ineligible.</p>}
+      : run?.status === 'pending' ? <p>{formatWpm(run.wpm!)} WPM · {passedId ? 'Verified' : 'Verify to post'}.</p>
+        : <p>Join after your official run.</p>}
     {error && <p role="alert">{error}</p>}
-    {run && run.status !== 'running' && <form onSubmit={event => {
-      event.preventDefault();
-      if (run.status === 'published' || hasReceipt) void perform(publish);
-    }}>
-      <label className="field__label" htmlFor="leaderboard-nickname">Leaderboard nickname</label>
-      <input className="verification-input" style={{ minHeight: 0 }} id="leaderboard-nickname" type="text" maxLength={48}
-        value={nickname} placeholder={run.name} autoComplete="off" spellCheck={false} disabled={busy}
-        aria-describedby="nickname-hint" onChange={event => setNickname(event.target.value)} />
-      <p className="field__desc" id="nickname-hint">2–24 letters or numbers; spaces, . _ - allowed. Leave blank for a generated name.</p>
-      {run.status === 'published' && <button className="btn" disabled={busy || nickname === run.name}>{busy ? 'Saving…' : 'Save nickname'}</button>}
-    </form>}
+    {run?.status === 'published' && <button className="btn btn--ghost" onClick={() => setNicknameOpen(true)}>Edit nickname</button>}
+    {nicknameOpen && run && <NicknameDialog initialValue={nickname || run.name} published={run.status === 'published'} onSubmit={publish} onClose={closeNickname} />}
     {!run || run.status === 'running' ? <button className="btn" disabled={busy || !replay || (!start && run?.status !== 'running')} onClick={() => void perform(async signal => {
       let ranked = finish ? await finish : run;
       if (!ranked || ranked.status === 'running') {
@@ -299,24 +305,23 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
       }
       if (!signal.aborted) setRun(ranked);
     })}>{busy ? 'Saving…' : 'Join leaderboard'}</button> : null}
-    {(!run || run.status === 'running') && (!replay || (!start && run?.status !== 'running')) && <p className="start__hint">This result has no complete timed replay. You can join with your next daily run.</p>}
+    {(!run || run.status === 'running') && (!replay || (!start && run?.status !== 'running')) && <p className="start__hint">Available on your next daily run.</p>}
     {canCheck && !activeAttempt && <>
-      {attempt?.result && <p role="status">{attempt.result.passed ? `Speed check passed at ${formatWpm(attempt.result.measuredWpm)} WPM.`
-        : ['accuracy', 'mismatch'].includes(attempt.result.reason) ? 'The text did not match. Request another passage.' : 'The required speed was not reached. You can request another passage.'}</p>}
+      {attempt?.result && !passedId && <p role="status">{['accuracy', 'mismatch'].includes(attempt.result.reason) ? 'Text did not match.' : 'Below the required speed.'}</p>}
       <div className="result__actions">
-        {(hasReceipt || attempt?.status === 'passed') && <button className="btn btn--primary" disabled={busy} onClick={() => void perform(publish)}>Publish checked score</button>}
-        <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
+        {passedId ? !nicknameOpen && <button className="btn btn--primary" onClick={() => setNicknameOpen(true)}>Post score</button>
+          : <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
           const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
           if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); setImageReady(false); }
-        })}>{busy ? 'Preparing…' : 'Get verification passage'}</button>
+        })}>{busy ? 'Preparing…' : 'Verify score'}</button>}
       </div>
     </>}
     {activeAttempt && <div className="panel result">
-      <h3>Speed verification</h3>
-      <p>Pass one passage at <strong>{attempt.requiredWpm} WPM</strong> or faster. Timing starts on your first character. It submits automatically when the words match. Letter case does not matter. {VERIFICATION_PASSAGE_ALLOWANCE}.</p>
+      <h3>Speed check</h3>
+      <p>Pass one passage at <strong>{attempt.requiredWpm} WPM</strong>. Timing starts on your first character; case doesn’t matter.</p>
       <>
         <p className="tnum" role="timer" aria-label={attempt.status === 'ready' && !starting ? 'Time to start' : 'Time remaining'}>{attempt.status === 'ready' && !starting
-          ? `Start within ${timeToStart}s · ${(Math.ceil(verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) / 100) / 10).toFixed(1)} seconds to type`
+          ? `Start within ${timeToStart}s · ${(Math.ceil(verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm) / 100) / 10).toFixed(1)}s to type`
           : `${(Math.ceil(remainingMs / 100) / 10).toFixed(1)}s remaining · No pause`}</p>
         <img className="verification-image" src={`/api/verification/image?id=${attempt.id}&v=${imageRetry}`} alt="Verification passage to transcribe" width="720" height={attempt.imageHeight}
           onLoad={() => setImageReady(true)}
@@ -324,9 +329,9 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
         {!imageReady && <button className="btn btn--ghost" onClick={() => setImageRetry(value => value + 1)}>Reload image</button>}
         <div>
           <label htmlFor="speed-answer">Type the passage</label>
-          <div className="verification-editor">
+          <div className={`verification-editor${wrongOffset >= 0 ? ' verification-editor--incorrect' : ''}`}>
             <div ref={mirror} className="verification-input verification-mirror" aria-hidden="true">
-              {wrongOffset < 0 ? answer : <>{answer.slice(0, wrongOffset)}<span className={`ch incorrect${/\s/.test(wrongCharacter) ? ' sp' : ''}`}>{wrongCharacter}</span>{answer.slice(wrongOffset + wrongCharacter.length)}</>}{'\u200b'}
+              {wrongOffset < 0 ? answer : <>{answer.slice(0, wrongOffset)}<span className="ch incorrect">{answer.slice(wrongOffset)}</span></>}{'\u200b'}
             </div>
             <textarea ref={input} className="verification-input" id="speed-answer" value={answer} disabled={(busy && submission.current !== null) || !imageReady || ((attempt.status === 'running' || starting) && remainingMs === 0)} maxLength={1000}
               autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} aria-invalid={wrongOffset >= 0}
@@ -341,14 +346,12 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
         {((attempt.status === 'running' && remainingMs === 0) || error) && <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
           const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
           if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); setImageReady(false); }
-        })}>Request a new passage</button>}
+        })}>New passage</button>}
       </>
       <button className="btn btn--ghost" disabled={busy} onClick={() => void perform(async signal => {
         const status = await communityRequest<VerificationStatus>('verification/cancel', { id: attempt.id }, signal);
         if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); }
-      }, attempt.id)}>Cancel speed check</button>
-      <p className="start__hint">The image-based check is visual. It is optional; your daily result and streak remain saved.</p>
+      }, attempt.id)}>Cancel</button>
     </div>}
-    <button className="btn btn--ghost" onClick={onLeaderboard}>View daily leaderboard</button>
   </section>;
 }

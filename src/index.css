@@ -429,3 +429,7 @@ h3 {
 .verification-mirror { position: absolute; inset: 0; border-color: transparent; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; pointer-events: none; resize: none; }
 .verification-editor textarea { position: relative; background: transparent; color: transparent; caret-color: var(--ink); }
 .verification-editor textarea::selection { color: var(--ink); }
+.verification-editor--incorrect { background: var(--bad-bg); border-radius: var(--radius); }
+.verification-editor--incorrect .verification-mirror { background: transparent; }
+.verification-editor--incorrect textarea { border-color: var(--bad); caret-color: var(--bad); }
+.verification-editor--incorrect textarea:focus-visible { outline-color: var(--bad); }

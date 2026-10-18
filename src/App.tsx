@@ -60,6 +60,7 @@ export function App() {
   const [community, setCommunity] = useState(false);
   const rankedStart = useRef<Promise<RankedRun>>();
   const rankedFinish = useRef<Promise<RankedRun>>();
+  const leaderboardReturn = useRef<'home' | 'result'>('home');
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -227,6 +228,25 @@ export function App() {
     else setPhase('home');
   }, [challenge, load]);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const openLeaderboard = () => {
+    leaderboardReturn.current = phase === 'result' ? 'result' : 'home';
+    setPhase('leaderboard');
+  };
+  const viewOfficialResult = () => {
+    if (!completedResult || !challenge) return;
+    // The same stored-result path serves the home card and the board's back link.
+    setLastResult({
+      replay: completedResult.replay,
+      wpm: completedResult.wpm, rawWpm: completedResult.wpm,
+      accuracy: completedResult.accuracy, errors: completedResult.errors, completion: 1,
+      elapsedMs: completedResult.elapsedMs, correctChars: 0, totalChars: 0,
+      storyCount: completedResult.storyCount || challenge.stories.length,
+      storiesCleared: completedResult.storiesCleared,
+      timedOut: (completedResult.storiesCleared || 0) < (completedResult.storyCount || 0),
+      currentStoryFraction: completedResult.storyFraction ?? 0, samples: [],
+    });
+    setPractice(false); setPhase('result');
+  };
 
   // --- Render ---
   const currentStreak = stats.current;
@@ -237,7 +257,9 @@ export function App() {
   else if (!challenge) body = <LoadingScreen />;
   else if (phase === 'stats') body = <StatsView stats={stats} />;
   else if (phase === 'about') body = <AboutView />;
-  else if (phase === 'leaderboard') body = <LeaderboardView date={challenge.date} />;
+  else if (phase === 'leaderboard') body = <LeaderboardView date={challenge.date}
+    onBack={leaderboardReturn.current === 'result' && lastResult ? () => setPhase('result') : completedResult ? viewOfficialResult : goHome}
+    backLabel={completedResult || (leaderboardReturn.current === 'result' && lastResult) ? 'Back to your result' : 'Back to game'} />;
   else if (phase === 'playing')
     body = (
       <Play
@@ -268,7 +290,7 @@ export function App() {
         gamesCompleted={stats.gamesCompleted}
         onPracticeAgain={startPractice}
         onViewStats={() => setPhase('stats')}
-        onLeaderboard={community ? () => setPhase('leaderboard') : undefined}
+        onLeaderboard={community ? openLeaderboard : undefined}
         rankedStart={rankedStart.current}
         rankedFinish={rankedFinish.current}
       />
@@ -280,27 +302,7 @@ export function App() {
         challenge={challenge}
         result={completedResult}
         streak={currentStreak}
-        onViewResult={() => {
-          // Rebuild a minimal result view from the stored official result.
-          setLastResult({
-            replay: completedResult.replay,
-            wpm: completedResult.wpm,
-            rawWpm: completedResult.wpm,
-            accuracy: completedResult.accuracy,
-            errors: completedResult.errors,
-            completion: 1,
-            elapsedMs: completedResult.elapsedMs,
-            correctChars: 0,
-            totalChars: 0,
-            storyCount: completedResult.storyCount || challenge.stories.length,
-            storiesCleared: completedResult.storiesCleared,
-            timedOut: (completedResult.storiesCleared || 0) < (completedResult.storyCount || 0),
-            currentStoryFraction: completedResult.storyFraction ?? 0,
-            samples: [],
-          });
-          setPractice(false);
-          setPhase('result');
-        }}
+        onViewResult={viewOfficialResult}
         onPractice={startPractice}
         onViewStats={() => setPhase('stats')}
       />
@@ -337,7 +339,7 @@ export function App() {
             Keywulf &middot; <button className="footer__nav" onClick={goHome}>Daily news typeracing</button>
           </span>
           <span style={{ display: 'inline-flex', gap: 18, flexWrap: 'wrap' }}>
-            {community && <button className="footer__nav" onClick={() => setPhase('leaderboard')}>Leaderboard</button>}
+            {community && <button className="footer__nav" onClick={openLeaderboard}>Leaderboard</button>}
             <button className="footer__nav" onClick={() => setPhase('about')}>
               About
             </button>

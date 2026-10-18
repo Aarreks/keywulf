@@ -52,7 +52,9 @@ export class DailyLeaderboard {
         ORDER BY wpm DESC, accuracy DESC, completed_at ASC, id ASC LIMIT 50`).toArray()
         .map(row => ({ id: row.id, name: row.name, wpm: row.wpm, accuracy: row.accuracy, verified: Boolean(row.verified) }));
       return Response.json({ date: url.searchParams.get('date'), entries }, { headers: {
-        'Cache-Control': 'public, max-age=10', 'X-Content-Type-Options': 'nosniff',
+        // A just-published score must be visible on the next board read, even if
+        // this browser or an intermediary previously saw an empty leaderboard.
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
       } });
     }
     if (request.method !== 'POST') return verificationJson({ error: 'Method not allowed' }, 405);

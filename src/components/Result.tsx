@@ -97,9 +97,6 @@ export function Result({
 
       <RunGraph samples={result.samples} />
 
-      {!practice && onLeaderboard && <CommunityResult key={challenge.date} date={challenge.date}
-        replay={result.replay} elapsedMs={result.elapsedMs} start={rankedStart} finish={rankedFinish} onLeaderboard={onLeaderboard} />}
-
       <StoryPhotos stories={challenge.stories} completed={result.storiesCleared} />
 
       <div className="statgrid tnum">
@@ -151,6 +148,9 @@ export function Result({
           Stats
         </button>
       </div>
+
+      {!practice && onLeaderboard && <CommunityResult key={challenge.date} date={challenge.date}
+        replay={result.replay} elapsedMs={result.elapsedMs} start={rankedStart} finish={rankedFinish} onLeaderboard={onLeaderboard} />}
 
       {showSources && <Sources challenge={challenge} />}
     </div>

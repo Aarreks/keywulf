@@ -8,6 +8,7 @@ import { createVerificationPassage, renderVerificationImage } from './verificati
 import { normalizeNickname, replayScore, type RankedRun } from '../src/lib/leaderboard';
 import { scoreVerification, verificationCharacterOffset, verificationTextHash, verificationTimeLimitMs, type VerificationStatus } from '../src/lib/verification';
 import sample from '../src/data/sampleChallenge.json';
+import { buildCorpus } from '../src/lib/challengeClient';
 
 vi.mock('./verificationImage', () => ({ createVerificationPassage: vi.fn(), renderVerificationImage: vi.fn() }));
 // Actual SQLite enforces the same SQL uniqueness/index/transaction semantics;
@@ -407,6 +408,30 @@ describe('public community boundary', () => {
     headers: { Origin: origin, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
     body: payload === undefined ? undefined : JSON.stringify(payload),
   }), env);
+  it('publishes only with a valid nickname, then immediately exposes the score globally across sessions', async () => {
+    const begun = await api('runs/start', { date });
+    const cookie = begun.headers.get('Set-Cookie')!.split(';')[0];
+    const initial = (await begun.json() as { run: RankedRun }).run;
+    vi.advanceTimersByTime(120_000);
+    expect((await api('runs/finish', { date, id: initial.id, replay: buildCorpus(sample), elapsedMs: 120_000 }, cookie)).status).toBe(200);
+    const challenge = await (await api('verification/issue', { date }, cookie)).json() as VerificationStatus;
+    expect((await api('verification/start', { id: challenge.attempt!.id }, cookie)).status).toBe(200);
+    vi.advanceTimersByTime(20_000);
+    expect((await api('verification/finish', { id: challenge.attempt!.id, text: answer, elapsedMs: 20_000 }, cookie)).status).toBe(200);
+    expect((await api('runs/publish', { date, id: initial.id, nickname: 'invalid@name' }, cookie)).status).toBe(400);
+    expect((await (await api(`leaderboard?date=${date}`)).json()).entries).toEqual([]);
+    const posted = await api('runs/publish', { date, id: initial.id, nickname: 'Global Fox' }, cookie);
+    expect(posted.status).toBe(200);
+    expect((await posted.json() as { run: RankedRun }).run).toMatchObject({ status: 'published', verified: true });
+    const anonymous = await api(`leaderboard?date=${date}`);
+    expect(anonymous.headers.get('Cache-Control')).toBe('no-store');
+    const board = await anonymous.json() as { entries: { id: string; name: string }[] };
+    expect(board.entries).toHaveLength(1);
+    expect(board.entries[0]).toMatchObject({ id: initial.id, name: 'Global Fox' });
+    const differentCookie = 'keywulf_verification=00000000-0000-4000-8000-000000000000';
+    expect(await (await api(`leaderboard?date=${date}`, undefined, differentCookie)).json()).toEqual(board);
+    expect(await (await api(`leaderboard/me?date=${date}`, undefined, differentCookie)).json()).toEqual({ run: null });
+  });
   it('creates an HttpOnly session, rejects cross-origin writes and binds verification to a pending server score', async () => {
     expect((await api('runs/start', { date }, undefined, 'https://attacker.example')).status).toBe(403);
     const response = await api('runs/start', { date, player: 'victim' });

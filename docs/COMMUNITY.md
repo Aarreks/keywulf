@@ -12,7 +12,7 @@ first keystroke -> POST /api/runs/start -> date's DailyLeaderboard (SQLite)
 finish typing  -> POST /api/runs/finish -> private, immutable first result
                -> SpeedVerification object for this browser
                   reveal PNG and focus input -> first character starts clock
-                  exact match autosubmits -> receipt -> user posts -> top 50
+                  exact match autosubmits -> receipt -> nickname popup -> post -> top 50
 ```
 
 - [handleCommunity](../worker/verificationRoutes.ts) creates an HttpOnly,
@@ -79,8 +79,8 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   Hints have a separate 600-requests/minute per-IP limiter; ordinary community
   actions retain their 120/minute budget, so hints cannot block submission.
   It returns the first wrong position, not expected letters or a whole-answer
-  correctness mask. Later text remains ungraded until that error is corrected,
-  avoiding cascading errors after a missing/extra character. Feedback can still
+  correctness mask. The frontend tints the input and all text from that position
+  onward red until it is corrected; the suffix is not independently graded. Feedback can still
   serve as a bounded guessing oracle; it does not make the check OCR-proof.
   Replies whose prefix through the error was edited are ignored; changing text
   after the error keeps its highlight valid. A mirror uses the existing character-error style while
@@ -92,14 +92,20 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   its date, corpus hash, expiry and speed. A browser cannot supply its own badge.
   The top 50 use full-precision WPM, then accuracy, completion time and stable ID.
   Public JSON exposes only alias, result ID, WPM, accuracy and check status.
-- The optional nickname is chosen when posting and can be edited from the same
+- The nickname popup opens after a successful check; no nickname field precedes
+  verification. It shares the server's validator, shows posting failures inline,
+  and opens the board only after a verified `published` response. Dismissing it
+  preserves the check so posting can be resumed without another passage.
+  The nickname can be edited from the same
   browser afterward, without replacing the score. The server normalizes Unicode
   and whitespace, accepts 2–24 letters/numbers plus spaces, periods, underscores
   and hyphens, and rejects markup/control characters. Blank selects the generated
   alias. A local nickname preference carries across days. Names are not unique,
   authenticated identities or reserved handles; no profanity filter is claimed.
   Nickname updates use the same cookie ownership check as posting. Public reads
-  can retain their previous response for up to ten seconds.
+  use `no-store` so a pre-publication empty result cannot linger after posting.
+  The result panel previews the top five global entries below the ordinary result
+  grid/share controls; the full board has a back link to the current or stored result.
 - Date objects remove records after 35 days. Verification images/answers are
   erased on completion/cancellation and expired state is removed by alarms;
   successful receipts expire after 30 days. Briefings have separate ownership

@@ -2,14 +2,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CommunityResult } from './CommunityResult';
-import { CommunityError, communityRequest, getRankedRun, getVerification } from '../lib/communityClient';
+import { CommunityError, communityRequest, getBoard, getRankedRun, getVerification } from '../lib/communityClient';
 import type { RankedRun } from '../lib/leaderboard';
 import type { VerificationStatus } from '../lib/verification';
 import { normalizeVerificationText, verificationTextHash, verificationTimeLimitMs } from '../lib/verification';
 
 vi.mock('../lib/communityClient', async original => ({
   ...await original<typeof import('../lib/communityClient')>(),
-  communityRequest: vi.fn(), getRankedRun: vi.fn(), getVerification: vi.fn(),
+  communityRequest: vi.fn(), getBoard: vi.fn(), getRankedRun: vi.fn(), getVerification: vi.fn(),
 }));
 vi.mock('../lib/verification', async original => ({
   ...await original<typeof import('../lib/verification')>(), verificationTextHash: vi.fn(),
@@ -25,14 +25,15 @@ const running: VerificationStatus = { ...empty, attempt: { id: 'check', date: ru
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.mocked(communityRequest).mockReset();
+  vi.mocked(getBoard).mockResolvedValue({ date: run.date, entries: [] });
   vi.mocked(verificationTextHash).mockReset().mockImplementation(async (id, text) => `${id}:${normalizeVerificationText(text)}`);
   vi.mocked(getRankedRun).mockResolvedValue({ run }); vi.mocked(getVerification).mockResolvedValue(empty);
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
-const render = () => act(async () => root.render(<CommunityResult date={run.date} replay="abc" elapsedMs={120_000} start={Promise.resolve(run)} onLeaderboard={() => {}} />));
+const render = (onLeaderboard = () => {}) => act(async () => root.render(<CommunityResult date={run.date} replay="abc" elapsedMs={120_000} start={Promise.resolve(run)} onLeaderboard={onLeaderboard} />));
 async function click(text: string) {
-  const button = [...container.querySelectorAll('button')].find(item => item.textContent === text);
+  const button = [...document.querySelectorAll('button')].find(item => item.textContent === text);
   expect(button).toBeDefined(); await act(async () => button!.click());
 }
 
@@ -40,11 +41,11 @@ it('lets a pending fast score request verification without changing local game s
   localStorage.setItem('keywulf', 'unchanged');
   vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
   vi.mocked(communityRequest).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready' } });
-  await render(); await click('Get verification passage');
+  await render(); await click('Verify score');
   expect(container.textContent).toContain('113 WPM');
   expect(container.querySelector('img')).not.toBeNull();
   expect(container.textContent).toContain('Timing starts on your first character');
-  expect(container.textContent).toContain('1.1 seconds');
+  expect(container.textContent).toContain('1.1s to type');
   expect(localStorage.getItem('keywulf')).toBe('unchanged');
 });
 
@@ -56,16 +57,92 @@ async function enterAnswer(text: string) {
   });
 }
 
+async function enterNickname(text: string) {
+  await act(async () => {
+    const input = document.querySelector<HTMLInputElement>('#leaderboard-nickname')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+it('shows the top five immediately and never asks for a nickname before verification', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 80 } });
+  vi.mocked(getBoard).mockResolvedValue({ date: run.date, entries: Array.from({ length: 6 }, (_, i) => ({ id: String(i), name: `Fox ${i + 1}`, wpm: 100 - i, accuracy: 1, verified: true })) });
+  await render();
+  expect(container.querySelectorAll('[role="row"]')).toHaveLength(6);
+  expect(container.textContent).toContain('Fox 5');
+  expect(container.textContent).not.toContain('Fox 6');
+  expect(document.querySelector('#leaderboard-nickname')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it('opens the nickname popup after one pass, rejects invalid names locally and navigates only after a confirmed post', async () => {
+  const pending = { ...run, status: 'pending' as const, wpm: 80 };
+  const onBoard = vi.fn();
+  vi.mocked(getRankedRun).mockResolvedValue({ run: pending });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, status: 'passed' } })
+    .mockResolvedValueOnce({ run: { ...pending, status: 'published', name: 'Valid Fox', verified: true } });
+  await render(onBoard);
+  expect(document.querySelector('#leaderboard-nickname')).toBeNull();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some words');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('#leaderboard-nickname')).toHaveFocus();
+  expect(onBoard).not.toHaveBeenCalled();
+  await enterNickname('bad@name'); await click('Post score');
+  expect(document.querySelector('[role="dialog"] [role="alert"]')).toHaveTextContent('Use 2–24');
+  expect(communityRequest).toHaveBeenCalledTimes(1);
+  expect(container.textContent).not.toContain('Posted as');
+  await enterNickname('Valid Fox'); await click('Post score');
+  expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/finish', 'runs/publish']);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.textContent).toContain('Posted as Valid Fox');
+  expect(onBoard).toHaveBeenCalledTimes(1);
+});
+
+it('keeps a verified score private when posting is rejected and reuses the same pass on retry', async () => {
+  const pending = { ...run, status: 'pending' as const, wpm: 80 };
+  const onBoard = vi.fn();
+  vi.mocked(getRankedRun).mockResolvedValue({ run: pending });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  vi.mocked(communityRequest).mockRejectedValueOnce(new CommunityError('That nickname is invalid', 400))
+    .mockResolvedValueOnce({ run: pending })
+    .mockResolvedValueOnce({ run: { ...pending, status: 'published', verified: true } });
+  await render(onBoard);
+  await enterNickname('Valid Fox'); await click('Post score');
+  expect(document.querySelector('[role="dialog"] [role="alert"]')).toHaveTextContent('That nickname is invalid');
+  expect(onBoard).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain('Posted as');
+  await click('Post score');
+  expect(document.querySelector('[role="dialog"] [role="alert"]')).toHaveTextContent('Posting was not confirmed');
+  expect(onBoard).not.toHaveBeenCalled();
+  await click('Post score');
+  expect(onBoard).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(communityRequest).mock.calls.every(call => call[0] === 'runs/publish')).toBe(true);
+});
+
+it('lets the nickname popup close and reopen without requesting another verification passage', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 80 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  await render();
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close nickname"]')!.click());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await click('Post score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(communityRequest).not.toHaveBeenCalled();
+});
+
 it('counts down the time to start separately and switches to typing time on the first character', async () => {
   vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
   vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready', startedAt: null, expiresAt: 11_000 } });
   vi.mocked(communityRequest).mockResolvedValue({ ...running, serverNow: 2000, attempt: { ...running.attempt!, startedAt: 2000, expiresAt: 2000 + verificationTimeLimitMs(10, 113) } });
   await render();
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
-  expect(container.querySelector('[role="timer"]')).toHaveTextContent('Start within 10.0s · 1.1 seconds to type');
+  expect(container.querySelector('[role="timer"]')).toHaveTextContent('Start within 10.0s · 1.1s to type');
   expect(container.querySelector('[role="timer"]')).toHaveAttribute('aria-label', 'Time to start');
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-  expect(container.querySelector('[role="timer"]')).toHaveTextContent('Start within 9.0s · 1.1 seconds to type');
+  expect(container.querySelector('[role="timer"]')).toHaveTextContent('Start within 9.0s · 1.1s to type');
   expect(communityRequest).not.toHaveBeenCalled();
   await enterAnswer('s');
   expect(container.querySelector('[role="timer"]')).toHaveTextContent('1.1s remaining · No pause');
@@ -118,7 +195,7 @@ it('automatically submits a full exact match once, but not a same-length typo', 
   await enterAnswer('SOME   words ');
   expect(communityRequest).toHaveBeenCalledTimes(1);
   expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/finish');
-  expect(container.textContent).toContain('Publish checked score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
 });
 
 it('retires an idle passage when its ten-second readiness window expires', async () => {
@@ -130,7 +207,7 @@ it('retires an idle passage when its ten-second readiness window expires', async
   expect(container.querySelector('textarea')).toBeNull();
   expect(container.querySelector('[role="timer"]')).toBeNull();
   expect(container.textContent).toContain('expired');
-  expect(container.textContent).toContain('Get verification passage');
+  expect(container.textContent).toContain('Verify score');
   expect(communityRequest).not.toHaveBeenCalled();
 });
 
@@ -143,7 +220,7 @@ it.each([404, 410])('retires a stale passage when the first keystroke is rejecte
   await enterAnswer('x');
   expect(container.querySelector('[role="timer"]')).toBeNull();
   expect(container.querySelector('textarea')).toBeNull();
-  expect(container.textContent).toContain('Get verification passage');
+  expect(container.textContent).toContain('Verify score');
   await act(async () => { await vi.advanceTimersByTimeAsync(500); });
   expect(communityRequest).toHaveBeenCalledTimes(1);
 });
@@ -156,7 +233,7 @@ it('recovers from a rejected start with a fresh passage without reloading the pa
   await render();
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
   await enterAnswer('x');
-  await click('Get verification passage');
+  await click('Verify score');
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.querySelector('textarea')).toHaveValue('');
@@ -190,7 +267,7 @@ it.each(['feedback', 'submission'])('retires an attempt rejected as expired duri
   expect(container.querySelector('textarea')).toBeNull();
   expect(container.querySelector('[role="timer"]')).toBeNull();
   expect(container.textContent).not.toContain('Retry submission');
-  expect(container.textContent).toContain('Get verification passage');
+  expect(container.textContent).toContain('Verify score');
   await act(async () => { await vi.advanceTimersByTimeAsync(800); });
   expect(communityRequest).toHaveBeenCalledTimes(1);
 });
@@ -208,7 +285,7 @@ it('ignores a matching hash that finishes after the player changes the text', as
   expect(communityRequest).not.toHaveBeenCalled();
 });
 
-it('highlights the first wrong character, keeps appended feedback useful and clears it immediately on correction', async () => {
+it('highlights the entire incorrect suffix and input, and clears them on correction', async () => {
   vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
   vi.mocked(getVerification).mockResolvedValue(running);
   vi.mocked(communityRequest).mockResolvedValue({ id: 'check', mismatchIndex: 6 });
@@ -218,18 +295,20 @@ it('highlights the first wrong character, keeps appended feedback useful and cle
   await act(async () => { await vi.advanceTimersByTimeAsync(39); });
   expect(communityRequest).not.toHaveBeenCalled();
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('urd');
   expect(container.querySelector('textarea')).toHaveAttribute('aria-invalid', 'true');
+  expect(container.querySelector('.verification-editor')).toHaveClass('verification-editor--incorrect');
   expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/check');
   await enterAnswer('some wurds');
-  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('urds');
   await enterAnswer('some wurx');
-  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('u');
+  expect(container.querySelector('.verification-mirror .incorrect')?.textContent).toBe('urx');
   await act(async () => { await vi.advanceTimersByTimeAsync(500); });
   expect(communityRequest).toHaveBeenCalledTimes(1);
   await enterAnswer('some word');
   expect(container.querySelector('.verification-mirror .incorrect')).toBeNull();
   expect(container.querySelector('textarea')).toHaveAttribute('aria-invalid', 'false');
+  expect(container.querySelector('.verification-editor')).not.toHaveClass('verification-editor--incorrect');
 });
 
 it('coalesces fast typing, checks the latest text and reuses confirmed prefixes without polling', async () => {
@@ -327,7 +406,7 @@ it('keeps typing and exact-match submission working if optional feedback is unav
   expect(container.querySelector('textarea')!.disabled).toBe(false);
   await enterAnswer('some words');
   expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/check', 'verification/finish']);
-  expect(container.textContent).toContain('Publish checked score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
 });
 
 it('ignores a stale initial read arriving after a successful score submission', async () => {
@@ -345,8 +424,9 @@ it('lets the owner update a published nickname without submitting the replay aga
   vi.mocked(getRankedRun).mockResolvedValue({ run: saved });
   vi.mocked(communityRequest).mockResolvedValue({ run: { ...saved, name: 'Fox 2' } });
   await render();
+  await click('Edit nickname');
   await act(async () => {
-    const input = container.querySelector<HTMLInputElement>('#leaderboard-nickname')!;
+    const input = document.querySelector<HTMLInputElement>('#leaderboard-nickname')!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Fox 2');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
@@ -361,7 +441,7 @@ it('recovers a passed receipt after the short-lived challenge record expires', a
   vi.mocked(getVerification).mockResolvedValue({ ...empty, receipt: { id: 'old-check', date: run.date, corpusHash: run.corpusHash,
     claimedWpm: 150, requiredWpm: 113, measuredWpm: 120, accuracy: 1, verifiedAt: 0, validUntil: 10_000 } });
   await render();
-  expect(container.textContent).toContain('Publish checked score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
 });
 
 it('uses the running server deadline, blocks paste and permits a new passage after expiry', async () => {
@@ -381,7 +461,7 @@ it('uses the running server deadline, blocks paste and permits a new passage aft
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(container.textContent).toContain('0.0s remaining');
   expect(input.disabled).toBe(true);
-  expect(container.textContent).toContain('Request a new passage');
+  expect(container.textContent).toContain('New passage');
 });
 
 it('keeps the same answer for retry after an unknown network outcome', async () => {
@@ -395,5 +475,5 @@ it('keeps the same answer for retry after an unknown network outcome', async () 
   expect(container.textContent).toContain('Connection lost');
   await click('Retry submission');
   expect(vi.mocked(communityRequest).mock.calls[0][1]).toEqual(vi.mocked(communityRequest).mock.calls[1][1]);
-  expect(container.textContent).toContain('Publish checked score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
 });

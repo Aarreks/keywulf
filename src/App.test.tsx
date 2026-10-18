@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { buildCorpus, fetchTodayChallenge, parseChallenge } from './lib/challengeClient';
-import { communityRequest, finishRankedRun, getVerification, startRankedRun } from './lib/communityClient';
+import { communityRequest, finishRankedRun, getBoard, getRankedRun, getVerification, startRankedRun } from './lib/communityClient';
 import type { RankedRun } from './lib/leaderboard';
 import { defaultState, loadState, saveState } from './lib/storage';
 import sample from './data/sampleChallenge.json';
@@ -14,7 +14,7 @@ vi.mock('./lib/challengeClient', async (importOriginal) => ({
 }));
 vi.mock('./lib/communityClient', async original => ({
   ...await original<typeof import('./lib/communityClient')>(),
-  communityRequest: vi.fn(), finishRankedRun: vi.fn(), getVerification: vi.fn(), startRankedRun: vi.fn(),
+  communityRequest: vi.fn(), finishRankedRun: vi.fn(), getBoard: vi.fn(), getRankedRun: vi.fn(), getVerification: vi.fn(), startRankedRun: vi.fn(),
 }));
 
 let root: Root;
@@ -31,6 +31,8 @@ beforeEach(() => {
   })));
   localStorage.clear();
   vi.mocked(communityRequest).mockReset().mockResolvedValue({ enabled: false });
+  vi.mocked(getBoard).mockResolvedValue({ date: sample.date, entries: [] });
+  vi.mocked(getRankedRun).mockResolvedValue({ run: null });
   vi.mocked(finishRankedRun).mockReset();
   vi.mocked(startRankedRun).mockReset();
   vi.mocked(getVerification).mockResolvedValue({ attempt: null, receipt: null, retryAt: null, serverNow: Date.now() });
@@ -61,6 +63,21 @@ async function clickButton(label: string) {
 }
 
 describe('visitor flows', () => {
+  it('returns from the leaderboard to a stored official result after a page refresh', async () => {
+    const state = defaultState();
+    state.results[sample.date] = { date: sample.date, gameNumber: sample.gameNumber, wpm: 80,
+      accuracy: 1, elapsedMs: 120_000, errors: 0, storiesCleared: 2, storyCount: sample.stories.length,
+      completedAt: new Date().toISOString(), replay: 'some words' };
+    saveState(state);
+    vi.mocked(communityRequest).mockResolvedValue({ enabled: true });
+    await renderApp();
+    await clickButton('Leaderboard');
+    expect(container.querySelector('#leaderboard-title')).not.toBeNull();
+    await clickButton('Back to your result');
+    expect(container.querySelector('.result__wpm')).toHaveTextContent('80');
+    expect(container.querySelector('#community-result-title')).not.toBeNull();
+    expect(loadState().results[sample.date].wpm).toBe(80);
+  });
   it('freezes the private leaderboard score on completion, before the player posts it', async () => {
     const challenge = parseChallenge(sample);
     challenge.stories = [{ ...challenge.stories[0], headline: 'A.', body: 'B.' }];
@@ -79,7 +96,16 @@ describe('visitor flows', () => {
     });
     expect(finishRankedRun).toHaveBeenCalledTimes(1);
     expect(vi.mocked(finishRankedRun).mock.calls[0].slice(1, 3)).toEqual([challenge.date, corpus]);
-    expect(container.textContent).toContain('Pass the speed check to publish it');
+    expect(container.textContent).toContain('WPM · Verify to post');
+    const communityPanel = container.querySelector('#community-result-title')!.closest('section')!;
+    expect(container.querySelector('.statgrid')!.compareDocumentPosition(communityPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect([...container.querySelectorAll('button')].find(button => button.textContent?.includes('Share result'))!.compareDocumentPosition(communityPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector('#leaderboard-nickname')).toBeNull();
+    await clickButton('Full leaderboard');
+    expect(container.querySelector('#leaderboard-title')).not.toBeNull();
+    await clickButton('Back to your result');
+    expect(container.querySelector('.result__wpm')).not.toBeNull();
+    expect(container.querySelector('#community-result-title')).not.toBeNull();
     expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).not.toContain('runs/publish');
     expect(loadState().results[challenge.date].replay).toBe(corpus);
   });
