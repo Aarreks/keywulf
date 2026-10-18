@@ -92,10 +92,14 @@ finish typing  -> POST /api/runs/finish -> private, immutable first result
   its date, corpus hash, expiry and speed. A browser cannot supply its own badge.
   The top 50 use full-precision WPM, then accuracy, completion time and stable ID.
   Public JSON exposes only alias, result ID, WPM, accuracy and check status.
-- The nickname popup opens after a successful check; no nickname field precedes
+- The nickname popup confirms a newly completed check passed; no nickname field precedes
   verification. It shares the server's validator, shows posting failures inline,
   and opens the board only after a verified `published` response. Dismissing it
   preserves the check so posting can be resumed without another passage.
+  Returning from the board reads the current publication state instead of the
+  cached finish response, and saved passes never reopen the popup automatically.
+  Failed checks and elapsed deadlines show Retry/Give up in a dialog. An unknown
+  finish outcome retains the same-answer retry rather than claiming it failed.
   The nickname can be edited from the same
   browser afterward, without replacing the score. The server normalizes Unicode
   and whitespace, accepts 2–24 letters/numbers plus spaces, periods, underscores

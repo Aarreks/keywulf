@@ -76,6 +76,24 @@ it('shows the top five immediately and never asks for a nickname before verifica
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
+it('reads the current published score when returning with an old finish promise, without reopening nickname selection', async () => {
+  const pending = { ...run, status: 'pending' as const, wpm: 80 };
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...pending, status: 'published', name: 'Posted Fox', verified: true } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  await act(async () => root.render(<CommunityResult date={run.date} elapsedMs={120_000} finish={Promise.resolve(pending)} onLeaderboard={() => {}} />));
+  expect(container.textContent).toContain('Posted as Posted Fox');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it('offers a saved verification pass without automatically reopening its nickname popup', async () => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 80 } });
+  vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
+  await render();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await click('Post score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
+});
+
 it('opens the nickname popup after one pass, rejects invalid names locally and navigates only after a confirmed post', async () => {
   const pending = { ...run, status: 'pending' as const, wpm: 80 };
   const onBoard = vi.fn();
@@ -87,7 +105,7 @@ it('opens the nickname popup after one pass, rejects invalid names locally and n
   expect(document.querySelector('#leaderboard-nickname')).toBeNull();
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
   await enterAnswer('some words');
-  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
   expect(document.querySelector('#leaderboard-nickname')).toHaveFocus();
   expect(onBoard).not.toHaveBeenCalled();
   await enterNickname('bad@name'); await click('Post score');
@@ -110,6 +128,7 @@ it('keeps a verified score private when posting is rejected and reuses the same 
     .mockResolvedValueOnce({ run: pending })
     .mockResolvedValueOnce({ run: { ...pending, status: 'published', verified: true } });
   await render(onBoard);
+  await click('Post score');
   await enterNickname('Valid Fox'); await click('Post score');
   expect(document.querySelector('[role="dialog"] [role="alert"]')).toHaveTextContent('That nickname is invalid');
   expect(onBoard).not.toHaveBeenCalled();
@@ -126,10 +145,11 @@ it('lets the nickname popup close and reopen without requesting another verifica
   vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 80 } });
   vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'passed' } });
   await render();
+  await click('Post score');
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close nickname"]')!.click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await click('Post score');
-  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
   expect(communityRequest).not.toHaveBeenCalled();
 });
 
@@ -195,7 +215,7 @@ it('automatically submits a full exact match once, but not a same-length typo', 
   await enterAnswer('SOME   words ');
   expect(communityRequest).toHaveBeenCalledTimes(1);
   expect(vi.mocked(communityRequest).mock.calls[0][0]).toBe('verification/finish');
-  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
 });
 
 it('retires an idle passage when its ten-second readiness window expires', async () => {
@@ -206,7 +226,8 @@ it('retires an idle passage when its ten-second readiness window expires', async
   await act(async () => { await vi.advanceTimersByTimeAsync(10_001); });
   expect(container.querySelector('textarea')).toBeNull();
   expect(container.querySelector('[role="timer"]')).toBeNull();
-  expect(container.textContent).toContain('expired');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Speed check failed');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('10 seconds');
   expect(container.textContent).toContain('Verify score');
   expect(communityRequest).not.toHaveBeenCalled();
 });
@@ -229,12 +250,14 @@ it('recovers from a rejected start with a fresh passage without reloading the pa
   vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
   vi.mocked(getVerification).mockResolvedValue({ ...running, attempt: { ...running.attempt!, status: 'ready', startedAt: null, expiresAt: 11_000 } });
   vi.mocked(communityRequest).mockRejectedValueOnce(new CommunityError('Challenge expired. Request a new passage.', 410))
+    .mockResolvedValueOnce(empty)
     .mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, id: 'replacement', status: 'ready', startedAt: null, expiresAt: 11_000 } });
   await render();
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
   await enterAnswer('x');
-  await click('Verify score');
+  await click('Retry');
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.querySelector('textarea')).toHaveValue('');
   expect(container.querySelector('textarea')).toHaveFocus();
@@ -406,7 +429,7 @@ it('keeps typing and exact-match submission working if optional feedback is unav
   expect(container.querySelector('textarea')!.disabled).toBe(false);
   await enterAnswer('some words');
   expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/check', 'verification/finish']);
-  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
 });
 
 it('ignores a stale initial read arriving after a successful score submission', async () => {
@@ -441,7 +464,9 @@ it('recovers a passed receipt after the short-lived challenge record expires', a
   vi.mocked(getVerification).mockResolvedValue({ ...empty, receipt: { id: 'old-check', date: run.date, corpusHash: run.corpusHash,
     claimedWpm: 150, requiredWpm: 113, measuredWpm: 120, accuracy: 1, verifiedAt: 0, validUntil: 10_000 } });
   await render();
-  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await click('Post score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
 });
 
 it('uses the running server deadline, blocks paste and permits a new passage after expiry', async () => {
@@ -459,9 +484,50 @@ it('uses the running server deadline, blocks paste and permits a new passage aft
   await act(async () => { await vi.advanceTimersByTimeAsync(100); });
   expect(container.textContent).toContain('1.0s remaining');
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-  expect(container.textContent).toContain('0.0s remaining');
-  expect(input.disabled).toBe(true);
-  expect(container.textContent).toContain('New passage');
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Time ran out.');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Retry');
+  await click('Give up');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.textContent).toContain('Verify score');
+});
+
+it.each(['speed', 'mismatch'] as const)('shows a confirmed %s failure with retry and give-up actions', async reason => {
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, status: 'failed',
+    result: { passed: false, measuredWpm: 110, accuracy: Number(reason !== 'mismatch'), elapsedMs: 1100, reason } } })
+    .mockResolvedValueOnce({ ...running, attempt: { ...running.attempt!, id: 'retry', status: 'ready', startedAt: null, expiresAt: 11_000 } });
+  await render();
+  await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
+  await enterAnswer('some words');
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog).toHaveTextContent('Speed check failed');
+  expect(dialog).toHaveTextContent(reason === 'speed' ? 'You needed 113 WPM.' : 'The passage didn’t match.');
+  expect(dialog.querySelector('button')).toHaveFocus();
+  await click('Retry');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.querySelector('textarea')).toHaveValue('');
+  expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).toEqual(['verification/finish', 'verification/issue']);
+});
+
+it('keeps a failed retry in the failure popup, traps focus, and gives up without changing the daily result', async () => {
+  localStorage.setItem('keywulf', 'daily result');
+  vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 150 } });
+  vi.mocked(getVerification).mockResolvedValue(running);
+  vi.mocked(communityRequest).mockRejectedValueOnce(new CommunityError('Challenge expired', 410))
+    .mockRejectedValueOnce(new CommunityError('Try again later.', 429));
+  await render();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+  const retry = document.querySelector<HTMLButtonElement>('[role="dialog"] button')!;
+  expect(retry).toHaveFocus();
+  await act(async () => retry.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })));
+  expect(document.activeElement).toHaveTextContent('Give up');
+  await click('Retry');
+  expect(document.querySelector('[role="dialog"] [role="alert"]')).toHaveTextContent('Try again later.');
+  await click('Give up');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(localStorage.getItem('keywulf')).toBe('daily result');
 });
 
 it('keeps the same answer for retry after an unknown network outcome', async () => {
@@ -473,7 +539,9 @@ it('keeps the same answer for retry after an unknown network outcome', async () 
   await act(async () => container.querySelector('img')!.dispatchEvent(new Event('load')));
   await enterAnswer('some words');
   expect(container.textContent).toContain('Connection lost');
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   await click('Retry submission');
   expect(vi.mocked(communityRequest).mock.calls[0][1]).toEqual(vi.mocked(communityRequest).mock.calls[1][1]);
-  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Post your score');
+  expect(document.querySelector('[role="dialog"]')).toHaveTextContent('Verification passed');
 });

@@ -5,6 +5,7 @@ import { normalizeVerificationText, requiredVerificationWpm, verificationCharact
 import { formatWpm } from '../lib/scoring';
 import { LeaderboardView } from './LeaderboardView';
 import { NicknameDialog } from './NicknameDialog';
+import { VerificationFailureDialog } from './VerificationFailureDialog';
 
 interface Props {
   date: string;
@@ -25,8 +26,9 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     try { return localStorage.getItem('keywulf.nickname') || ''; } catch { return ''; }
   });
   const [nicknameOpen, setNicknameOpen] = useState(false);
-  const promptedPassage = useRef<string>();
   const closeNickname = useCallback(() => setNicknameOpen(false), []);
+  const [failure, setFailure] = useState('');
+  const closeFailure = useCallback(() => setFailure(''), []);
   const [imageReady, setImageReady] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
@@ -61,14 +63,17 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     submittedElapsed.current = undefined;
     setStarting(false); setRemainingMs(0);
     setVerification(status => status?.attempt?.id === id ? { ...status, attempt: { ...status.attempt, status: 'expired' } } : status);
-    setError('Passage expired.');
+    setError('');
+    setFailure(current.status === 'ready' ? 'You didn’t start within 10 seconds.' : 'Time ran out.');
   }, []);
 
   useEffect(() => {
     const active = new AbortController();
     const version = revision.current;
     controller.current = active;
-    const currentRun = finish ? finish.then(run => ({ run })) : getRankedRun(date, active.signal);
+    // Wait for the initial save, then read the mutable publication state. The
+    // finish promise retains the pre-publication score even after it is posted.
+    const currentRun = finish ? finish.then(() => getRankedRun(date, active.signal)) : getRankedRun(date, active.signal);
     void Promise.all([currentRun, getVerification(active.signal)]).then(([current, status]) => {
       if (!active.signal.aborted && version === revision.current) {
         setRun(current.run); setVerification(status);
@@ -119,11 +124,17 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     const localDeadline = (typingClock.current?.at ?? performance.now()) + verificationTimeLimitMs(attempt.characterCount, attempt.requiredWpm);
     deadline.current = attempt.status === 'running'
       ? Math.min(localDeadline, performance.now() + Math.max(0, attempt.expiresAt - verification.serverNow)) : localDeadline;
-    const tick = () => setRemainingMs(Math.max(0, deadline.current - performance.now()));
+    const tick = () => {
+      const remaining = Math.max(0, deadline.current - performance.now());
+      setRemainingMs(remaining);
+      // An in-flight finish can already have passed on the server. Wait for its
+      // acknowledgement rather than declaring that unknown outcome a failure.
+      if (!remaining && !inFlight.current && submission.current === null) expireAttempt(attempt.id);
+    };
     tick();
     const timer = setInterval(tick, 50);
     return () => clearInterval(timer);
-  }, [attempt, verification, starting]);
+  }, [attempt, verification, starting, expireAttempt]);
 
   const perform = useCallback(async (operation: (signal: AbortSignal) => Promise<void>, verificationId?: string) => {
     if (inFlight.current || !controller.current) return;
@@ -154,7 +165,15 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     const status = await communityRequest<VerificationStatus>('verification/finish', {
       id, text: submission.current, elapsedMs: submittedElapsed.current,
     }, signal);
-    if (!signal.aborted) setVerification(status);
+    if (!signal.aborted) {
+      setVerification(status);
+      if (status.attempt?.status === 'passed') setNicknameOpen(true);
+      else if (status.attempt && ['failed', 'expired'].includes(status.attempt.status)) {
+        const reason = status.attempt.result?.reason;
+        setFailure(reason === 'mismatch' || reason === 'accuracy' ? 'The passage didn’t match.'
+          : reason === 'speed' ? `You needed ${status.attempt.requiredWpm} WPM.` : 'Time ran out.');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -265,11 +284,6 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     receipt.validUntil > verification.serverNow && receipt.requiredWpm >= requiredVerificationWpm(run.wpm!);
   const activeAttempt = attempt && ['ready', 'running'].includes(attempt.status);
   const passedId = hasReceipt ? receipt!.id : attempt?.status === 'passed' && attempt.date === run?.date && attempt.corpusHash === run.corpusHash ? attempt.id : undefined;
-  useEffect(() => {
-    if (run?.status === 'pending' && passedId && promptedPassage.current !== passedId) {
-      promptedPassage.current = passedId; setNicknameOpen(true);
-    }
-  }, [passedId, run?.status]);
   const readyMs = readyRemaining && readyRemaining.id === attempt?.id ? readyRemaining.ms : Math.max(0, (attempt?.expiresAt ?? 0) - (verification?.serverNow ?? 0));
   const timeToStart = (Math.ceil(readyMs / 100) / 10).toFixed(1);
   const checkedOffset = feedback?.id === attempt?.id && feedback?.mismatchIndex !== null && feedback &&
@@ -277,6 +291,21 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     ? verificationCharacterOffset(answer, feedback.mismatchIndex) : -1;
   const invalidOffset = answer.search(/[^a-zA-Z\s]/);
   const wrongOffset = checkedOffset < 0 ? invalidOffset : invalidOffset < 0 ? checkedOffset : Math.min(checkedOffset, invalidOffset);
+  function requestPassage() {
+    void perform(async signal => {
+      // A local deadline can precede the server's by request latency. Retire
+      // that passage before issuing, otherwise issue may return the same one.
+      if (attempt?.status === 'expired') {
+        try { await communityRequest('verification/cancel', { id: attempt.id }, signal); }
+        catch (err) { if (!(err instanceof CommunityError) || ![404, 409, 410].includes(err.status)) throw err; }
+      }
+      const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
+      if (!signal.aborted) {
+        setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined;
+        typingClock.current = undefined; setStarting(false); setImageReady(false); setFailure('');
+      }
+    });
+  }
   async function publish(chosenName: string, signal: AbortSignal) {
     const result = await communityRequest<{ run: RankedRun }>('runs/publish', { date, id: run!.id, nickname: chosenName }, signal);
     if (!signal.aborted) {
@@ -294,7 +323,8 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
     {run?.status === 'published' ? <p role="status">Posted as <strong>{run.name}</strong> · {formatWpm(run.wpm!)} WPM{run.verified ? ' · Speed checked' : ''}.</p>
       : run?.status === 'pending' ? <p>{formatWpm(run.wpm!)} WPM · {passedId ? 'Verified' : 'Verify to post'}.</p>
         : <p>Join after your official run.</p>}
-    {error && <p role="alert">{error}</p>}
+    {error && !failure && <p role="alert">{error}</p>}
+    {failure && <VerificationFailureDialog message={failure} error={error} busy={busy} onRetry={requestPassage} onClose={closeFailure} />}
     {run?.status === 'published' && <button className="btn btn--ghost" onClick={() => setNicknameOpen(true)}>Edit nickname</button>}
     {nicknameOpen && run && <NicknameDialog initialValue={nickname || run.name} published={run.status === 'published'} onSubmit={publish} onClose={closeNickname} />}
     {!run || run.status === 'running' ? <button className="btn" disabled={busy || !replay || (!start && run?.status !== 'running')} onClick={() => void perform(async signal => {
@@ -310,10 +340,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
       {attempt?.result && !passedId && <p role="status">{['accuracy', 'mismatch'].includes(attempt.result.reason) ? 'Text did not match.' : 'Below the required speed.'}</p>}
       <div className="result__actions">
         {passedId ? !nicknameOpen && <button className="btn btn--primary" onClick={() => setNicknameOpen(true)}>Post score</button>
-          : <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
-          const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
-          if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); setImageReady(false); }
-        })}>{busy ? 'Preparing…' : 'Verify score'}</button>}
+          : <button className="btn" disabled={busy} onClick={requestPassage}>{busy ? 'Preparing…' : 'Verify score'}</button>}
       </div>
     </>}
     {activeAttempt && <div className="panel result">
@@ -343,10 +370,7 @@ export function CommunityResult({ date, replay, elapsedMs, start, finish, onLead
           {busy && submission.current !== null && <p role="status">Checking speed…</p>}
           {!busy && submission.current !== null && error && <button className="btn" onClick={() => void perform(signal => submit(attempt.id, submission.current!, signal), attempt.id)}>Retry submission</button>}
         </div>
-        {((attempt.status === 'running' && remainingMs === 0) || error) && <button className="btn" disabled={busy} onClick={() => void perform(async signal => {
-          const status = await communityRequest<VerificationStatus>('verification/issue', { date }, signal);
-          if (!signal.aborted) { setVerification(status); setAnswer(''); submission.current = null; submittedElapsed.current = undefined; typingClock.current = undefined; setStarting(false); setImageReady(false); }
-        })}>New passage</button>}
+        {error && <button className="btn" disabled={busy} onClick={requestPassage}>New passage</button>}
       </>
       <button className="btn btn--ghost" disabled={busy} onClick={() => void perform(async signal => {
         const status = await communityRequest<VerificationStatus>('verification/cancel', { id: attempt.id }, signal);

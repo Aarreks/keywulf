@@ -88,6 +88,7 @@ describe('visitor flows', () => {
     vi.mocked(communityRequest).mockResolvedValue({ enabled: true });
     vi.mocked(startRankedRun).mockResolvedValue(run);
     vi.mocked(finishRankedRun).mockResolvedValue({ ...run, status: 'pending', wpm: 70 });
+    vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'pending', wpm: 70 } });
     await renderApp(); await clickButton('Start');
     await act(async () => {
       const input = container.querySelector('textarea')!;
@@ -103,9 +104,16 @@ describe('visitor flows', () => {
     expect(container.querySelector('#leaderboard-nickname')).toBeNull();
     await clickButton('Full leaderboard');
     expect(container.querySelector('#leaderboard-title')).not.toBeNull();
+    vi.mocked(getRankedRun).mockResolvedValue({ run: { ...run, status: 'published', wpm: 70, name: 'Posted Fox', verified: true } });
+    vi.mocked(getVerification).mockResolvedValue({ attempt: null, retryAt: null, serverNow: Date.now(), receipt: {
+      id: 'passed', date: run.date, corpusHash: run.corpusHash, claimedWpm: 70, requiredWpm: 53, measuredWpm: 60,
+      accuracy: 1, verifiedAt: Date.now(), validUntil: Date.now() + 60_000,
+    } });
     await clickButton('Back to your result');
     expect(container.querySelector('.result__wpm')).not.toBeNull();
     expect(container.querySelector('#community-result-title')).not.toBeNull();
+    expect(container.textContent).toContain('Posted as Posted Fox');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(vi.mocked(communityRequest).mock.calls.map(call => call[0])).not.toContain('runs/publish');
     expect(loadState().results[challenge.date].replay).toBe(corpus);
   });

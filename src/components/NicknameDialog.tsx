@@ -56,9 +56,10 @@ export function NicknameDialog({ initialValue, published, onSubmit, onClose }: P
   return createPortal(<div className="overlay" onPointerDown={() => { if (!inFlight.current) onClose(); }}>
     <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="nickname-title" ref={dialog} onPointerDown={event => event.stopPropagation()}>
       <div className="dialog__head">
-        <h2 id="nickname-title" style={{ fontSize: 18 }}>{published ? 'Edit nickname' : 'Post your score'}</h2>
+        <h2 id="nickname-title" style={{ fontSize: 18 }}>{published ? 'Edit nickname' : 'Verification passed'}</h2>
         <button className="iconbtn" disabled={saving} onClick={onClose} aria-label="Close nickname"><CloseIcon /></button>
       </div>
+      {!published && <p>Choose a nickname to post your score.</p>}
       <form onSubmit={event => void submit(event)}>
         <label className="field__label" htmlFor="leaderboard-nickname">Nickname</label>
         <input ref={input} className="verification-input" style={{ minHeight: 0 }} id="leaderboard-nickname" value={nickname}
